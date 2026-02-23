@@ -1,0 +1,15 @@
+{
+  "idea": "django-apcore",
+  "status": "ready",
+  "created": "2026-02-18T00:00:00Z",
+  "updated": "2026-02-19T00:00:00Z",
+  "session_count": 5,
+  "draft_version": 4,
+  "validation": {
+    "problem_evidence": "fastapi-mcp 82x download gap; 8+ fragmented Django MCP packages; no protocol-level solution",
+    "demand_evidence": "DjangoCon 2025 keynote MCP demo; django-ninja #1449 declined; 2,800+ ML/AI companies using Django; 49% use DRF; 10% use ninja (+67% YoY)",
+    "competitive_analysis": true,
+    "not_build_analysis": "Users would use fragmented existing solutions or migrate to FastAPI for MCP needs",
+    "validated": true
+  }
+}

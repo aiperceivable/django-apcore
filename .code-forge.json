@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "project": "django-apcore",
+  "description": "Django App that bridges the apcore (AI-Perceivable Core) protocol to the Django ecosystem",
+  "input": {
+    "base_path": "docs/django-apcore/",
+    "documents": [
+      "tech-design.md",
+      "prd.md"
+    ]
+  },
+  "output": {
+    "base_path": "planning/",
+    "features": [
+      {
+        "name": "django-apcore",
+        "path": "planning/django-apcore/",
+        "plan": "planning/django-apcore/plan.md",
+        "overview": "planning/django-apcore/overview.md",
+        "state": "planning/django-apcore/state.json",
+        "tasks_dir": "planning/django-apcore/tasks/"
+      }
+    ]
+  },
+  "settings": {
+    "tdd_mode": "strict",
+    "granularity": "fine",
+    "task_count": 10,
+    "estimated_hours_per_task": "2-4",
+    "tech_stack": {
+      "language": "python",
+      "language_version": "3.10+",
+      "framework": "django",
+      "framework_version": "4.2+",
+      "testing": "pytest + pytest-django",
+      "linting": "ruff",
+      "type_checking": "mypy",
+      "build": "hatchling"
+    }
+  }
+}

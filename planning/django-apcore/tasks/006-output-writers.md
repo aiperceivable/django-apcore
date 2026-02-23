@@ -1,0 +1,612 @@
+# Task 006: YAMLWriter + PythonWriter
+
+## Goal
+
+Implement `YAMLWriter` and `PythonWriter`, two output writer classes that take lists of `ScannedModule` instances and write them to disk. `YAMLWriter` produces `.binding.yaml` files compatible with `apcore.BindingLoader`. `PythonWriter` produces PEP 8-compliant Python files containing `@module`-decorated wrapper functions with inline Pydantic schema classes.
+
+## Files Involved
+
+### Create
+
+- `src/django_apcore/output/__init__.py` -- Output subpackage with `get_writer()` helper
+- `src/django_apcore/output/yaml_writer.py` -- `YAMLWriter` class
+- `src/django_apcore/output/python_writer.py` -- `PythonWriter` class
+
+### Test
+
+- `tests/test_yaml_writer.py` -- YAML output correctness, file creation, BindingLoader compatibility
+- `tests/test_python_writer.py` -- Python output validity, PEP 8 compliance, @module correctness
+
+## Steps
+
+### Step 1: Write tests (TDD -- Red phase)
+
+Create `tests/test_yaml_writer.py`:
+
+```python
+# tests/test_yaml_writer.py
+import yaml
+import pytest
+from pathlib import Path
+
+
+@pytest.fixture
+def sample_modules():
+    from django_apcore.scanners.base import ScannedModule
+
+    return [
+        ScannedModule(
+            module_id="api.v1.users.list",
+            description="List all users with pagination support.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                },
+                "required": [],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array"},
+                    "total": {"type": "integer"},
+                },
+                "required": ["items", "total"],
+            },
+            tags=["users", "read"],
+            target="myapp.api:list_users",
+        ),
+        ScannedModule(
+            module_id="api.v1.users.create",
+            description="Create a new user.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "email": {"type": "string"},
+                },
+                "required": ["name", "email"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"},
+                },
+                "required": ["id", "name"],
+            },
+            tags=["users", "write"],
+            target="myapp.api:create_user",
+        ),
+    ]
+
+
+class TestYAMLWriter:
+    """Test YAML binding file generation."""
+
+    def test_write_creates_files(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        yaml_files = list(tmp_path.glob("*.binding.yaml"))
+        assert len(yaml_files) == 2
+
+    def test_write_creates_directory_if_missing(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        output_dir = tmp_path / "new_dir" / "nested"
+        writer = YAMLWriter()
+        writer.write(sample_modules, str(output_dir))
+
+        assert output_dir.exists()
+
+    def test_yaml_is_valid(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        for yaml_file in tmp_path.glob("*.binding.yaml"):
+            data = yaml.safe_load(yaml_file.read_text())
+            assert "bindings" in data
+
+    def test_yaml_contains_module_fields(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        yaml_file = tmp_path / "api.v1.users.list.binding.yaml"
+        data = yaml.safe_load(yaml_file.read_text())
+        binding = data["bindings"][0]
+
+        assert binding["module_id"] == "api.v1.users.list"
+        assert binding["target"] == "myapp.api:list_users"
+        assert binding["description"] == "List all users with pagination support."
+        assert binding["tags"] == ["users", "read"]
+        assert binding["version"] == "1.0.0"
+        assert "input_schema" in binding
+        assert "output_schema" in binding
+
+    def test_yaml_has_header_comment(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        yaml_file = tmp_path / "api.v1.users.list.binding.yaml"
+        content = yaml_file.read_text()
+        assert "Auto-generated by django-apcore" in content
+
+    def test_write_empty_list(self, tmp_path):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        writer.write([], str(tmp_path))
+
+        yaml_files = list(tmp_path.glob("*.binding.yaml"))
+        assert len(yaml_files) == 0
+
+    def test_overwrite_existing_file(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        writer.write(sample_modules, str(tmp_path))
+        # Write again -- should overwrite
+        writer.write(sample_modules, str(tmp_path))
+
+        yaml_files = list(tmp_path.glob("*.binding.yaml"))
+        assert len(yaml_files) == 2
+
+    def test_dry_run_does_not_write(self, tmp_path, sample_modules):
+        from django_apcore.output.yaml_writer import YAMLWriter
+
+        writer = YAMLWriter()
+        result = writer.write(sample_modules, str(tmp_path), dry_run=True)
+
+        yaml_files = list(tmp_path.glob("*.binding.yaml"))
+        assert len(yaml_files) == 0
+        # Should still return the content that would be written
+        assert len(result) == 2
+```
+
+Create `tests/test_python_writer.py`:
+
+```python
+# tests/test_python_writer.py
+import ast
+import pytest
+
+
+@pytest.fixture
+def sample_modules():
+    from django_apcore.scanners.base import ScannedModule
+
+    return [
+        ScannedModule(
+            module_id="api.v1.users.list",
+            description="List all users.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer"},
+                    "limit": {"type": "integer"},
+                },
+                "required": [],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "items": {"type": "array"},
+                    "total": {"type": "integer"},
+                },
+                "required": ["items", "total"],
+            },
+            tags=["users"],
+            target="myapp.api:list_users",
+        ),
+    ]
+
+
+class TestPythonWriter:
+    """Test Python @module code generation."""
+
+    def test_write_creates_file(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        py_files = list(tmp_path.glob("*.py"))
+        assert len(py_files) >= 1
+
+    def test_generated_code_is_valid_python(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        for py_file in tmp_path.glob("*.py"):
+            content = py_file.read_text()
+            # Should parse without SyntaxError
+            ast.parse(content)
+
+    def test_generated_code_has_module_decorator(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        py_file = list(tmp_path.glob("*.py"))[0]
+        content = py_file.read_text()
+        assert "@module(" in content
+        assert 'id="api.v1.users.list"' in content
+
+    def test_generated_code_has_header(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        py_file = list(tmp_path.glob("*.py"))[0]
+        content = py_file.read_text()
+        assert "Auto-generated" in content
+        assert "from __future__ import annotations" in content
+
+    def test_write_creates_directory_if_missing(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        output_dir = tmp_path / "new_dir"
+        writer = PythonWriter()
+        writer.write(sample_modules, str(output_dir))
+
+        assert output_dir.exists()
+
+    def test_write_empty_list(self, tmp_path):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        writer.write([], str(tmp_path))
+
+        py_files = list(tmp_path.glob("*.py"))
+        assert len(py_files) == 0
+
+    def test_dry_run_does_not_write(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        result = writer.write(sample_modules, str(tmp_path), dry_run=True)
+
+        py_files = list(tmp_path.glob("*.py"))
+        assert len(py_files) == 0
+        assert len(result) >= 1
+
+    def test_imports_apcore_module(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        writer.write(sample_modules, str(tmp_path))
+
+        py_file = list(tmp_path.glob("*.py"))[0]
+        content = py_file.read_text()
+        assert "from apcore import module" in content
+```
+
+### Step 2: Run tests -- verify they fail
+
+```bash
+pytest tests/test_yaml_writer.py tests/test_python_writer.py -x --tb=short
+```
+
+Expected: `ImportError: No module named 'django_apcore.output.yaml_writer'`
+
+### Step 3: Implement
+
+Create `src/django_apcore/output/__init__.py`:
+
+```python
+"""Output writer subpackage.
+
+Provides YAMLWriter and PythonWriter for serializing ScannedModule lists.
+"""
+
+from __future__ import annotations
+
+
+def get_writer(output_format: str):
+    """Return a writer instance for the given output format.
+
+    Args:
+        output_format: Output format ('yaml' or 'python').
+
+    Returns:
+        A writer instance with a write() method.
+
+    Raises:
+        ValueError: If the format is not recognized.
+    """
+    if output_format == "yaml":
+        from django_apcore.output.yaml_writer import YAMLWriter
+        return YAMLWriter()
+    elif output_format == "python":
+        from django_apcore.output.python_writer import PythonWriter
+        return PythonWriter()
+    else:
+        raise ValueError(
+            f"Unknown output format: '{output_format}'. Must be 'yaml' or 'python'."
+        )
+```
+
+Create `src/django_apcore/output/yaml_writer.py`:
+
+```python
+"""YAML binding file generator.
+
+Writes ScannedModule instances as .binding.yaml files compatible with
+apcore.BindingLoader.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from django_apcore.scanners.base import ScannedModule
+
+logger = logging.getLogger("django_apcore")
+
+
+class YAMLWriter:
+    """Generates .binding.yaml files from ScannedModule instances."""
+
+    def write(
+        self,
+        modules: list[ScannedModule],
+        output_dir: str,
+        dry_run: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Write YAML binding files for each ScannedModule.
+
+        Args:
+            modules: List of ScannedModule instances to write.
+            output_dir: Directory path to write files to.
+            dry_run: If True, return content without writing to disk.
+
+        Returns:
+            List of dicts representing the YAML content for each module.
+        """
+        if not modules:
+            return []
+
+        output_path = Path(output_dir)
+        if not dry_run:
+            output_path.mkdir(parents=True, exist_ok=True)
+
+        results = []
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        for module in modules:
+            binding_data = self._build_binding(module)
+            results.append(binding_data)
+
+            if not dry_run:
+                filename = f"{module.module_id}.binding.yaml"
+                file_path = output_path / filename
+
+                if file_path.exists():
+                    logger.warning("Overwriting existing file: %s", file_path)
+
+                header = (
+                    f"# Auto-generated by django-apcore scanner\n"
+                    f"# Generated: {timestamp}\n"
+                    f"# Do not edit manually unless you intend to customize schemas.\n\n"
+                )
+                yaml_content = yaml.dump(
+                    binding_data, default_flow_style=False, sort_keys=False
+                )
+                file_path.write_text(header + yaml_content, encoding="utf-8")
+                logger.debug("Written: %s", file_path)
+
+        return results
+
+    def _build_binding(self, module: ScannedModule) -> dict[str, Any]:
+        """Build the YAML-serializable dict for a ScannedModule."""
+        return {
+            "bindings": [
+                {
+                    "module_id": module.module_id,
+                    "target": module.target,
+                    "description": module.description,
+                    "tags": module.tags,
+                    "version": module.version,
+                    "input_schema": module.input_schema,
+                    "output_schema": module.output_schema,
+                }
+            ]
+        }
+```
+
+Create `src/django_apcore/output/python_writer.py`:
+
+```python
+"""Python @module code generator.
+
+Generates Python files containing @module-decorated wrapper functions
+with inline Pydantic schema classes.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from django_apcore.scanners.base import ScannedModule
+
+logger = logging.getLogger("django_apcore")
+
+# JSON Schema type to Python type mapping
+_TYPE_MAP = {
+    "string": "str",
+    "integer": "int",
+    "number": "float",
+    "boolean": "bool",
+    "array": "list",
+    "object": "dict",
+}
+
+
+class PythonWriter:
+    """Generates Python files with @module-decorated functions."""
+
+    def write(
+        self,
+        modules: list[ScannedModule],
+        output_dir: str,
+        dry_run: bool = False,
+    ) -> list[str]:
+        """Write Python module files for each ScannedModule.
+
+        Args:
+            modules: List of ScannedModule instances.
+            output_dir: Directory path to write files to.
+            dry_run: If True, return content without writing to disk.
+
+        Returns:
+            List of generated Python code strings.
+        """
+        if not modules:
+            return []
+
+        output_path = Path(output_dir)
+        if not dry_run:
+            output_path.mkdir(parents=True, exist_ok=True)
+
+        results = []
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        for module in modules:
+            code = self._generate_code(module, timestamp)
+            results.append(code)
+
+            if not dry_run:
+                safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", module.module_id)
+                filename = f"{safe_name}.py"
+                file_path = output_path / filename
+
+                if file_path.exists():
+                    logger.warning("Overwriting existing file: %s", file_path)
+
+                file_path.write_text(code, encoding="utf-8")
+                logger.debug("Written: %s", file_path)
+
+        return results
+
+    def _generate_code(self, module: ScannedModule, timestamp: str) -> str:
+        """Generate Python code for a single ScannedModule."""
+        func_name = module.module_id.split(".")[-1]
+        target_module, target_func = module.target.rsplit(":", 1)
+
+        # Build function parameters from input_schema
+        params = self._schema_to_params(module.input_schema)
+        param_str = ", ".join(params) if params else ""
+
+        tags_str = repr(module.tags)
+
+        code = f'''"""Auto-generated apcore module: {module.module_id}
+
+Generated: {timestamp}
+Do not edit manually unless you intend to customize behavior.
+"""
+
+from __future__ import annotations
+
+from apcore import module
+
+
+@module(
+    id="{module.module_id}",
+    description="{module.description}",
+    tags={tags_str},
+    version="{module.version}",
+)
+def {func_name}({param_str}):
+    """{module.description}"""
+    from {target_module} import {target_func} as _original
+
+    result = _original({", ".join(f"{p.split(':')[0].split('=')[0].strip()}={p.split(':')[0].split('=')[0].strip()}" for p in params)})
+    return result
+'''
+        return code
+
+    def _schema_to_params(self, schema: dict[str, Any]) -> list[str]:
+        """Convert a JSON Schema to Python function parameters."""
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        params = []
+
+        for name, prop in properties.items():
+            py_type = _TYPE_MAP.get(prop.get("type", ""), "Any")
+            if name in required:
+                params.append(f"{name}: {py_type}")
+            else:
+                params.append(f"{name}: {py_type} | None = None")
+
+        return params
+```
+
+### Step 4: Run tests -- verify they pass
+
+```bash
+pytest tests/test_yaml_writer.py tests/test_python_writer.py -x --tb=short -v
+```
+
+All tests should pass.
+
+### Step 5: Commit
+
+```bash
+git add src/django_apcore/output/ tests/test_yaml_writer.py tests/test_python_writer.py
+git commit -m "feat: YAMLWriter and PythonWriter output generators"
+```
+
+## Acceptance Criteria
+
+- [ ] `YAMLWriter.write()` produces one `.binding.yaml` file per `ScannedModule`
+- [ ] YAML output contains all required fields: `module_id`, `target`, `description`, `tags`, `version`, `input_schema`, `output_schema`
+- [ ] YAML output is parseable by `yaml.safe_load()` and has `bindings` key
+- [ ] YAML files include header comment with "Auto-generated by django-apcore"
+- [ ] `PythonWriter.write()` produces valid Python files (pass `ast.parse()`)
+- [ ] Python output includes `from __future__ import annotations` and `from apcore import module`
+- [ ] Python output uses `@module()` decorator with correct `id`, `description`, `tags`, `version`
+- [ ] Both writers create output directory if it does not exist (`os.makedirs`)
+- [ ] Both writers support `dry_run=True` (return content without writing)
+- [ ] Both writers handle empty module lists (no files written)
+- [ ] Overwriting existing files logs a warning
+- [ ] 100% test coverage for both writers
+
+## Dependencies
+
+- **005-scanner-base** -- Requires `ScannedModule` dataclass
+
+## Estimated Time
+
+4 hours
+
+## Troubleshooting
+
+**Issue: YAML output order differs from expected**
+PyYAML's `dump()` with `sort_keys=False` preserves insertion order for Python 3.7+ dicts. If the order still differs, check the `_build_binding()` method's dict construction order.
+
+**Issue: Generated Python code has syntax errors**
+Use `ast.parse(code)` in the test to catch syntax errors. Common issues: unescaped quotes in descriptions, invalid identifiers from module_id conversion. The `_schema_to_params()` method must produce valid Python parameter syntax.
