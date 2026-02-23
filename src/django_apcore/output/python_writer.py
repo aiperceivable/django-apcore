@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -57,7 +57,7 @@ class PythonWriter:
             output_path.mkdir(parents=True, exist_ok=True)
 
         results: list[str] = []
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         for module in modules:
             code = self._generate_code(module, timestamp)

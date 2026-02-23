@@ -47,8 +47,11 @@ class Command(BaseCommand):
         cleanup_parser.add_argument(
             "--max-age",
             type=int,
-            default=3600,
-            help="Max age in seconds for completed tasks (default: 3600)",
+            default=None,
+            help=(
+                "Max age in seconds for completed tasks"
+                " (default: APCORE_TASK_CLEANUP_AGE setting)"
+            ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -56,6 +59,10 @@ class Command(BaseCommand):
         if not subcommand:
             raise CommandError("Subcommand required: list, cancel, or cleanup")
 
+        # Read settings for default values
+        from django_apcore.settings import get_apcore_settings
+
+        self._settings = get_apcore_settings()
         tm = get_task_manager()
 
         if subcommand == "list":
@@ -87,6 +94,8 @@ class Command(BaseCommand):
             self.stdout.write(f"Task {task_id} could not be cancelled.")
 
     def _handle_cleanup(self, tm: Any, options: dict) -> None:
-        max_age = options.get("max_age", 3600)
+        max_age = options.get("max_age")
+        if max_age is None:
+            max_age = self._settings.task_cleanup_age
         count = tm.cleanup(max_age_seconds=max_age)
         self.stdout.write(f"Cleaned up {count} tasks.")

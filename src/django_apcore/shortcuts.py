@@ -159,6 +159,7 @@ def cancellable_call(
     from apcore import CancelToken, Context
 
     from django_apcore.registry import get_context_factory, get_executor
+    from django_apcore.settings import get_apcore_settings
 
     executor = get_executor()
     token = CancelToken()
@@ -169,6 +170,10 @@ def cancellable_call(
         else:
             context = Context.create()
     context.cancel_token = token
+
+    # Fall back to settings default if no explicit timeout
+    if timeout is None:
+        timeout = get_apcore_settings().cancel_default_timeout
 
     if timeout is not None:
         import threading
@@ -195,6 +200,7 @@ async def cancellable_call_async(
 
     Creates a CancelToken and attaches it to the context.
     If timeout is provided (seconds), auto-cancels after that duration.
+    Falls back to APCORE_CANCEL_DEFAULT_TIMEOUT setting if no explicit timeout.
 
     Args:
         module_id: The module identifier to call.
@@ -213,6 +219,7 @@ async def cancellable_call_async(
     from apcore import CancelToken, Context
 
     from django_apcore.registry import get_context_factory, get_executor
+    from django_apcore.settings import get_apcore_settings
 
     executor = get_executor()
     token = CancelToken()
@@ -223,6 +230,10 @@ async def cancellable_call_async(
         else:
             context = Context.create()
     context.cancel_token = token
+
+    # Fall back to settings default if no explicit timeout
+    if timeout is None:
+        timeout = get_apcore_settings().cancel_default_timeout
 
     if timeout is not None:
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -47,7 +47,7 @@ class YAMLWriter:
             output_path.mkdir(parents=True, exist_ok=True)
 
         results: list[dict[str, Any]] = []
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         for module in modules:
             binding_data = self._build_binding(module)
