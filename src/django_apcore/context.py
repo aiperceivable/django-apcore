@@ -1,7 +1,8 @@
 """Django Context/Identity adapter for apcore.
 
 Provides DjangoContextFactory that creates apcore Context objects from
-Django HTTP requests, mapping request.user to Identity.
+Django HTTP requests, mapping request.user to Identity and extracting
+W3C TraceContext headers.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ logger = logging.getLogger("django_apcore")
 class DjangoContextFactory:
     """Creates apcore Context from Django HTTP requests.
 
-    Implements the apcore ContextFactory protocol:
-        create_context(request) -> Context
+    Implements the apcore ContextFactory protocol.
+    Supports W3C TraceContext (traceparent header) extraction.
     """
 
     def create_context(self, request: Any) -> Any:
@@ -31,7 +32,8 @@ class DjangoContextFactory:
         from apcore import Context
 
         identity = self._extract_identity(request)
-        return Context.create(identity=identity)
+        trace_parent = self._extract_trace_parent(request)
+        return Context.create(identity=identity, trace_parent=trace_parent)
 
     def _extract_identity(self, request: Any) -> Any:
         """Extract an apcore Identity from a Django request.
@@ -54,9 +56,9 @@ class DjangoContextFactory:
 
         # Extract group names safely
         try:
-            groups = list(user.groups.values_list("name", flat=True))
+            groups = tuple(user.groups.values_list("name", flat=True))
         except Exception:
-            groups = []
+            groups = ()
 
         attrs: dict[str, Any] = {}
         if hasattr(user, "is_staff"):
@@ -70,3 +72,27 @@ class DjangoContextFactory:
             roles=groups,
             attrs=attrs,
         )
+
+    def _extract_trace_parent(self, request: Any) -> Any:
+        """Extract W3C TraceContext traceparent from Django request.
+
+        Args:
+            request: Django HttpRequest.
+
+        Returns:
+            apcore TraceParent or None if header is missing/invalid.
+        """
+        meta = getattr(request, "META", None)
+        if meta is None:
+            return None
+
+        traceparent = meta.get("HTTP_TRACEPARENT", "")
+        if not traceparent:
+            return None
+
+        try:
+            from apcore import TraceContext
+
+            return TraceContext.extract({"traceparent": traceparent})
+        except (ImportError, ValueError):
+            return None
