@@ -83,8 +83,7 @@ class TestAutoDiscoveryEnabled:
                 app_config.ready()
 
             assert any(
-                "3 modules registered" in record.message
-                for record in caplog.records
+                "3 modules registered" in record.message for record in caplog.records
             )
 
 

@@ -108,9 +108,7 @@ def get_executor() -> Any:
                 ext_mgr = get_extension_manager()
                 ext_mgr.apply(registry, _executor)
 
-                logger.debug(
-                    "Created apcore.Executor with ExtensionManager assembly"
-                )
+                logger.debug("Created apcore.Executor with ExtensionManager assembly")
     return _executor
 
 

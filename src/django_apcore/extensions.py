@@ -76,9 +76,7 @@ class DjangoDiscoverer:
                 module_dir,
             )
         except ImportError:
-            logger.warning(
-                "apcore.BindingLoader not available; skipping binding files"
-            )
+            logger.warning("apcore.BindingLoader not available; skipping binding files")
         except Exception:
             logger.exception("Error loading binding files from %s", module_dir)
         return results
@@ -97,15 +95,11 @@ class DjangoDiscoverer:
                         obj = getattr(module, attr_name)
                         if callable(obj) and hasattr(obj, "apcore_module"):
                             fm = obj.apcore_module
-                            results.append(
-                                {"module_id": fm.module_id, "module": fm}
-                            )
+                            results.append({"module_id": fm.module_id, "module": fm})
                 except ImportError:
                     continue
                 except Exception:
-                    logger.warning(
-                        "Error scanning %s", module_name, exc_info=True
-                    )
+                    logger.warning("Error scanning %s", module_name, exc_info=True)
         except Exception:
             logger.warning("Error scanning installed apps", exc_info=True)
         return results

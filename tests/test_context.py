@@ -153,9 +153,8 @@ class TestDjangoContextFactory:
         user.is_authenticated = False
         request = MagicMock()
         request.user = user
-        request.META = {
-            "HTTP_TRACEPARENT": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
-        }
+        traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        request.META = {"HTTP_TRACEPARENT": traceparent}
         factory = DjangoContextFactory()
         factory.create_context(request)
         # Context.create should be called with trace_parent keyword

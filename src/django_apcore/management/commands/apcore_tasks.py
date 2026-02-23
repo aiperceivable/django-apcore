@@ -54,9 +54,7 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         subcommand = options.get("subcommand")
         if not subcommand:
-            raise CommandError(
-                "Subcommand required: list, cancel, or cleanup"
-            )
+            raise CommandError("Subcommand required: list, cancel, or cleanup")
 
         tm = get_task_manager()
 

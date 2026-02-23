@@ -129,3 +129,161 @@ async def executor_stream(
         context = get_context_factory().create_context(request)
     async for chunk in executor.stream(module_id, inputs or {}, context=context):
         yield chunk
+
+
+def cancellable_call(
+    module_id: str,
+    inputs: dict[str, Any] | None = None,
+    *,
+    request: Any = None,
+    context: Any = None,
+    timeout: float | None = None,
+) -> dict:
+    """Execute an apcore module with CancelToken.
+
+    Creates a CancelToken and attaches it to the context.
+    If timeout is provided (seconds), auto-cancels after that duration.
+
+    Args:
+        module_id: The module identifier to call.
+        inputs: Input dict for the module. Defaults to ``{}``.
+        request: Optional Django HttpRequest. Used to build a Context
+            via the configured ContextFactory when *context* is not given.
+        context: Explicit apcore Context. Takes precedence over *request*.
+        timeout: Optional timeout in seconds. If provided, the CancelToken
+            is automatically cancelled after the specified duration.
+
+    Returns:
+        The module result dict.
+    """
+    from apcore import CancelToken, Context
+
+    from django_apcore.registry import get_context_factory, get_executor
+
+    executor = get_executor()
+    token = CancelToken()
+
+    if context is None:
+        if request is not None:
+            context = get_context_factory().create_context(request)
+        else:
+            context = Context.create()
+    context.cancel_token = token
+
+    if timeout is not None:
+        import threading
+
+        timer = threading.Timer(timeout, token.cancel)
+        timer.start()
+        try:
+            return executor.call(module_id, inputs or {}, context=context)
+        finally:
+            timer.cancel()
+
+    return executor.call(module_id, inputs or {}, context=context)
+
+
+async def cancellable_call_async(
+    module_id: str,
+    inputs: dict[str, Any] | None = None,
+    *,
+    request: Any = None,
+    context: Any = None,
+    timeout: float | None = None,
+) -> dict:
+    """Execute an apcore module asynchronously with CancelToken.
+
+    Creates a CancelToken and attaches it to the context.
+    If timeout is provided (seconds), auto-cancels after that duration.
+
+    Args:
+        module_id: The module identifier to call.
+        inputs: Input dict for the module. Defaults to ``{}``.
+        request: Optional Django HttpRequest. Used to build a Context
+            via the configured ContextFactory when *context* is not given.
+        context: Explicit apcore Context. Takes precedence over *request*.
+        timeout: Optional timeout in seconds. If provided, the CancelToken
+            is automatically cancelled after the specified duration.
+
+    Returns:
+        The module result dict.
+    """
+    import asyncio
+
+    from apcore import CancelToken, Context
+
+    from django_apcore.registry import get_context_factory, get_executor
+
+    executor = get_executor()
+    token = CancelToken()
+
+    if context is None:
+        if request is not None:
+            context = get_context_factory().create_context(request)
+        else:
+            context = Context.create()
+    context.cancel_token = token
+
+    if timeout is not None:
+
+        async def _cancel_after_timeout() -> None:
+            await asyncio.sleep(timeout)
+            token.cancel()
+
+        cancel_task = asyncio.create_task(_cancel_after_timeout())
+        try:
+            return await executor.call_async(module_id, inputs or {}, context=context)
+        finally:
+            cancel_task.cancel()
+
+    return await executor.call_async(module_id, inputs or {}, context=context)
+
+
+async def submit_task(
+    module_id: str,
+    inputs: dict[str, Any] | None = None,
+    *,
+    context: Any = None,
+) -> str:
+    """Submit an async task to the AsyncTaskManager.
+
+    Args:
+        module_id: The module identifier to submit.
+        inputs: Input dict for the module. Defaults to ``{}``.
+        context: Explicit apcore Context.
+
+    Returns:
+        A task_id string identifying the submitted task.
+    """
+    from django_apcore.tasks import get_task_manager
+
+    tm = get_task_manager()
+    return await tm.submit(module_id, inputs or {}, context=context)
+
+
+def get_task_status(task_id: str) -> Any:
+    """Query task status from the AsyncTaskManager.
+
+    Args:
+        task_id: The identifier of the task to query.
+
+    Returns:
+        TaskInfo or None if the task is not found.
+    """
+    from django_apcore.tasks import get_task_manager
+
+    return get_task_manager().get_status(task_id)
+
+
+async def cancel_task(task_id: str) -> bool:
+    """Cancel a running async task.
+
+    Args:
+        task_id: The identifier of the task to cancel.
+
+    Returns:
+        True if cancelled, False if not found or already terminal.
+    """
+    from django_apcore.tasks import get_task_manager
+
+    return await get_task_manager().cancel(task_id)

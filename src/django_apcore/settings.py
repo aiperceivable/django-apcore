@@ -276,8 +276,7 @@ def get_apcore_settings() -> ApcoreSettings:
     ):
         actual = type(task_max_concurrent).__name__
         raise ImproperlyConfigured(
-            "APCORE_TASK_MAX_CONCURRENT must be a positive"
-            f" integer. Got: {actual}"
+            "APCORE_TASK_MAX_CONCURRENT must be a positive" f" integer. Got: {actual}"
         )
     if task_max_concurrent < 1:
         raise ImproperlyConfigured(
@@ -313,8 +312,7 @@ def get_apcore_settings() -> ApcoreSettings:
     if not isinstance(task_cleanup_age, int) or isinstance(task_cleanup_age, bool):
         actual = type(task_cleanup_age).__name__
         raise ImproperlyConfigured(
-            "APCORE_TASK_CLEANUP_AGE must be a non-negative"
-            f" integer. Got: {actual}"
+            "APCORE_TASK_CLEANUP_AGE must be a non-negative" f" integer. Got: {actual}"
         )
     if task_cleanup_age < 0:
         raise ImproperlyConfigured(
@@ -365,22 +363,19 @@ def get_apcore_settings() -> ApcoreSettings:
         )
 
     serve_log_level = getattr(settings, "APCORE_SERVE_LOG_LEVEL", None)
-    if serve_log_level is not None:
-        if serve_log_level not in VALID_SERVE_LOG_LEVELS:
-            choices = ", ".join(VALID_SERVE_LOG_LEVELS)
-            raise ImproperlyConfigured(
-                "APCORE_SERVE_LOG_LEVEL must be one of:"
-                f" {choices}. Got: '{serve_log_level}'"
-            )
+    if serve_log_level is not None and serve_log_level not in VALID_SERVE_LOG_LEVELS:
+        choices = ", ".join(VALID_SERVE_LOG_LEVELS)
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_LOG_LEVEL must be one of:"
+            f" {choices}. Got: '{serve_log_level}'"
+        )
 
     serve_tags = getattr(settings, "APCORE_SERVE_TAGS", None)
-    if serve_tags is not None:
-        if not isinstance(serve_tags, list) or not all(
-            isinstance(t, str) for t in serve_tags
-        ):
-            raise ImproperlyConfigured(
-                "APCORE_SERVE_TAGS must be a list of strings."
-            )
+    if serve_tags is not None and (
+        not isinstance(serve_tags, list)
+        or not all(isinstance(t, str) for t in serve_tags)
+    ):
+        raise ImproperlyConfigured("APCORE_SERVE_TAGS must be a list of strings.")
 
     serve_prefix = getattr(settings, "APCORE_SERVE_PREFIX", None)
     if serve_prefix is not None and not isinstance(serve_prefix, str):

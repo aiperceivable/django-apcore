@@ -267,9 +267,11 @@ class TestApcoreTasksCommand:
 
     def test_no_subcommand_raises_error(self):
         """Missing subcommand raises CommandError."""
-        with patch(f"{TASKS_CMD}.get_task_manager"):
-            with pytest.raises(CommandError, match="Subcommand required"):
-                call_command("apcore_tasks")
+        with (
+            patch(f"{TASKS_CMD}.get_task_manager"),
+            pytest.raises(CommandError, match="Subcommand required"),
+        ):
+            call_command("apcore_tasks")
 
     def test_list_no_tasks(self):
         """list subcommand with no tasks prints 'No tasks found.'."""

@@ -1,4 +1,5 @@
 """Django AppConfig for django-apcore (Extension-First architecture)."""
+
 from __future__ import annotations
 
 import logging
