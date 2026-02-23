@@ -36,42 +36,56 @@ class TestAutoDiscoveryEnabled:
 
         _reset_registry()
 
-    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_MODULE_DIR="nonexistent_dir/")
-    def test_missing_module_dir_logs_warning(self, caplog):
-        """When module dir doesn't exist, log warning and continue."""
-        app_config = apps.get_app_config("django_apcore")
-        with caplog.at_level(logging.WARNING, logger="django_apcore"):
+    @override_settings(APCORE_AUTO_DISCOVER=True)
+    def test_discover_is_called(self):
+        """When auto-discover is enabled, registry.discover() is called."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
             app_config.ready()
 
-        assert any("not found" in record.message.lower() for record in caplog.records)
+            mock_registry.discover.assert_called_once()
 
     @override_settings(APCORE_AUTO_DISCOVER=True)
-    @patch("apcore.BindingLoader")
-    def test_loads_binding_files_when_dir_exists(self, mock_loader_cls, tmp_path):
-        """When module dir exists, loads bindings via BindingLoader."""
-        module_dir = tmp_path / "apcore_modules"
-        module_dir.mkdir()
-        binding_file = module_dir / "test.binding.yaml"
-        binding_file.write_text("bindings: []")
+    def test_ready_completes_without_error(self):
+        """Auto-discovery completes without error even with no modules."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
 
-        mock_loader = MagicMock()
-        mock_loader.load_binding_dir.return_value = []
-        mock_loader_cls.return_value = mock_loader
-
-        app_config = apps.get_app_config("django_apcore")
-        with override_settings(APCORE_MODULE_DIR=str(module_dir)):
+            app_config = apps.get_app_config("django_apcore")
+            # Should not raise
             app_config.ready()
 
-        # BindingLoader should have been instantiated and used
-        mock_loader_cls.assert_called_once()
-        mock_loader.load_binding_dir.assert_called_once()
-
     @override_settings(APCORE_AUTO_DISCOVER=True)
-    def test_scans_installed_apps_for_apcore_modules(self):
-        """Auto-discovery scans INSTALLED_APPS for apcore_modules submodule."""
-        app_config = apps.get_app_config("django_apcore")
-        # Should not raise even if no apps have apcore_modules
-        app_config.ready()
+    def test_discover_count_logged(self, caplog):
+        """Auto-discovery logs the count of discovered modules."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 3
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            with caplog.at_level(logging.INFO, logger="django_apcore"):
+                app_config.ready()
+
+            assert any(
+                "3 modules registered" in record.message
+                for record in caplog.records
+            )
 
 
 class TestAutoDiscoveryDisabled:
@@ -100,26 +114,38 @@ class TestRegistryEvents:
 
         _reset_registry()
 
-    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_MODULE_DIR="nonexistent_dir/")
+    @override_settings(APCORE_AUTO_DISCOVER=True)
     def test_event_listener_registered(self):
         """Event listener is registered on the registry."""
-        app_config = apps.get_app_config("django_apcore")
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
 
-        # If registry.on works, it should not raise
-        app_config.ready()
+            app_config = apps.get_app_config("django_apcore")
+            # If registry.on works, it should not raise
+            app_config.ready()
 
-    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_MODULE_DIR="nonexistent_dir/")
+            mock_registry.on.assert_called_once()
+
+    @override_settings(APCORE_AUTO_DISCOVER=True)
     def test_event_callback_signature_matches_upstream(self):
         """Callback receives (module_id, module) per upstream contract."""
         app_config = apps.get_app_config("django_apcore")
 
-        with patch("django_apcore.registry.get_registry") as mock_get_reg:
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
             mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
             captured_callbacks = []
             mock_registry.on.side_effect = lambda event, cb: captured_callbacks.append(
                 cb
             )
-            mock_registry.count = 0
             mock_get_reg.return_value = mock_registry
 
             app_config.ready()
@@ -129,15 +155,18 @@ class TestRegistryEvents:
             # Should not raise with this signature
             captured_callbacks[0]("my.module", MagicMock())
 
-    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_MODULE_DIR="nonexistent_dir/")
+    @override_settings(APCORE_AUTO_DISCOVER=True)
     def test_handles_unavailable_events(self):
         """Gracefully handles registry without event support."""
         app_config = apps.get_app_config("django_apcore")
 
-        with patch("django_apcore.registry.get_registry") as mock_get_reg:
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
             mock_registry = MagicMock()
             mock_registry.on.side_effect = AttributeError("no events")
-            mock_registry.count = 0
+            mock_registry.discover.return_value = 0
             mock_get_reg.return_value = mock_registry
 
             # Should not raise
@@ -159,20 +188,27 @@ class TestEmbeddedServerInReady:
 
     @override_settings(
         APCORE_AUTO_DISCOVER=True,
-        APCORE_MODULE_DIR="nonexistent_dir/",
         APCORE_EMBEDDED_SERVER=True,
     )
     @patch("django_apcore.registry.start_embedded_server")
     def test_embedded_server_started_when_configured(self, mock_start):
         """Embedded server is started during ready() when configured."""
         mock_start.return_value = MagicMock()
-        app_config = apps.get_app_config("django_apcore")
-        app_config.ready()
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            app_config.ready()
+
         mock_start.assert_called_once()
 
     @override_settings(
         APCORE_AUTO_DISCOVER=True,
-        APCORE_MODULE_DIR="nonexistent_dir/",
         APCORE_EMBEDDED_SERVER=True,
     )
     @patch(
@@ -181,10 +217,18 @@ class TestEmbeddedServerInReady:
     )
     def test_embedded_server_failure_does_not_crash_startup(self, mock_start, caplog):
         """Failure to start embedded server doesn't crash startup."""
-        app_config = apps.get_app_config("django_apcore")
-        # Should not raise
-        with caplog.at_level(logging.WARNING, logger="django_apcore"):
-            app_config.ready()
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            # Should not raise
+            with caplog.at_level(logging.WARNING, logger="django_apcore"):
+                app_config.ready()
 
 
 class TestSettingsValidation:
@@ -201,3 +245,128 @@ class TestSettingsValidation:
         app_config = apps.get_app_config("django_apcore")
         with pytest.raises(ImproperlyConfigured):
             app_config.ready()
+
+
+class TestExtensionFirstStartup:
+    """Test Extension-First startup flow."""
+
+    def setup_method(self):
+        from django_apcore.registry import _reset_registry
+
+        _reset_registry()
+
+    @override_settings(APCORE_AUTO_DISCOVER=True)
+    def test_ready_triggers_discover(self):
+        """ready() calls registry.discover() for auto-discovery."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            app_config.ready()
+
+            mock_registry.discover.assert_called_once()
+
+    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_HOT_RELOAD=True)
+    def test_ready_enables_hot_reload(self):
+        """ready() calls registry.watch() when hot_reload is enabled."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            app_config.ready()
+
+            mock_registry.watch.assert_called_once()
+
+    @override_settings(APCORE_AUTO_DISCOVER=True)
+    def test_ready_calls_get_executor(self):
+        """ready() calls get_executor() to trigger ExtensionManager assembly."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor") as mock_get_exec,
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            app_config.ready()
+
+            mock_get_exec.assert_called_once()
+
+    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_HOT_RELOAD=True)
+    def test_hot_reload_import_error_handled(self, caplog):
+        """ImportError from registry.watch() is handled gracefully."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_registry.watch.side_effect = ImportError("no watchdog")
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            with caplog.at_level(logging.WARNING, logger="django_apcore"):
+                app_config.ready()
+
+            assert any("watchdog" in record.message for record in caplog.records)
+
+    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_HOT_RELOAD=True)
+    def test_hot_reload_general_error_handled(self, caplog):
+        """General exception from registry.watch() is handled gracefully."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_registry.watch.side_effect = RuntimeError("boom")
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            with caplog.at_level(logging.WARNING, logger="django_apcore"):
+                app_config.ready()
+
+            assert any(
+                "hot-reload" in record.message.lower() for record in caplog.records
+            )
+
+    @override_settings(APCORE_AUTO_DISCOVER=False)
+    def test_auto_discover_false_skips_everything(self, caplog):
+        """When auto_discover is False, no discovery or executor setup occurs."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor") as mock_get_exec,
+        ):
+            app_config = apps.get_app_config("django_apcore")
+            with caplog.at_level(logging.DEBUG, logger="django_apcore"):
+                app_config.ready()
+
+            mock_get_reg.assert_not_called()
+            mock_get_exec.assert_not_called()
+
+    @override_settings(APCORE_AUTO_DISCOVER=True, APCORE_HOT_RELOAD=False)
+    def test_hot_reload_not_called_when_disabled(self):
+        """registry.watch() is NOT called when hot_reload is False."""
+        with (
+            patch("django_apcore.registry.get_registry") as mock_get_reg,
+            patch("django_apcore.registry.get_executor"),
+        ):
+            mock_registry = MagicMock()
+            mock_registry.discover.return_value = 0
+            mock_get_reg.return_value = mock_registry
+
+            app_config = apps.get_app_config("django_apcore")
+            app_config.ready()
+
+            mock_registry.watch.assert_not_called()
