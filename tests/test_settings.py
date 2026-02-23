@@ -603,3 +603,107 @@ class TestApcoreSettingsEdgeCases:
 
         settings = get_apcore_settings()
         assert settings.serve_transport == "sse"
+
+
+class TestV030SettingsDefaults:
+    """Test defaults for v0.3.0 settings."""
+
+    def test_new_settings_defaults(self):
+        """All new v0.3.0 settings have sensible defaults."""
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.extensions_dir is None
+        assert s.module_validators == []
+        assert s.task_max_concurrent == 10
+        assert s.task_max_tasks == 1000
+        assert s.task_cleanup_age == 3600
+        assert s.cancel_default_timeout is None
+        assert s.serve_validate_inputs is False
+        assert s.serve_metrics is False
+        assert s.serve_log_level is None
+        assert s.serve_tags is None
+        assert s.serve_prefix is None
+        assert s.hot_reload is False
+        assert s.hot_reload_paths == []
+
+
+class TestV030SettingsValidation:
+    """Test validation for v0.3.0 settings."""
+
+    @override_settings(APCORE_TASK_MAX_CONCURRENT="not_int")
+    def test_task_max_concurrent_invalid_type(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_TASK_MAX_CONCURRENT"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_TASK_MAX_CONCURRENT=-1)
+    def test_task_max_concurrent_negative(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_TASK_MAX_CONCURRENT"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_TASK_MAX_TASKS="not_int")
+    def test_task_max_tasks_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_TASK_MAX_TASKS"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_TASK_CLEANUP_AGE=-1)
+    def test_task_cleanup_age_negative(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_TASK_CLEANUP_AGE"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_HOT_RELOAD="yes")
+    def test_hot_reload_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_HOT_RELOAD"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_LOG_LEVEL="TRACE")
+    def test_serve_log_level_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_SERVE_LOG_LEVEL"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_MODULE_VALIDATORS="not_a_list")
+    def test_module_validators_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_MODULE_VALIDATORS"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_HOT_RELOAD_PATHS="not_a_list")
+    def test_hot_reload_paths_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_HOT_RELOAD_PATHS"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_VALIDATE_INPUTS="true")
+    def test_serve_validate_inputs_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_SERVE_VALIDATE_INPUTS"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_METRICS="true")
+    def test_serve_metrics_invalid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_SERVE_METRICS"):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_LOG_LEVEL="INFO")
+    def test_serve_log_level_valid(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.serve_log_level == "INFO"

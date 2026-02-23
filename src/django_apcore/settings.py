@@ -24,6 +24,11 @@ DEFAULT_BINDING_PATTERN = "*.binding.yaml"
 VALID_TRANSPORTS = ("stdio", "streamable-http", "sse")
 VALID_SAMPLING_STRATEGIES = ("full", "proportional", "error_first", "off")
 
+DEFAULT_TASK_MAX_CONCURRENT = 10
+DEFAULT_TASK_MAX_TASKS = 1000
+DEFAULT_TASK_CLEANUP_AGE = 3600
+VALID_SERVE_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
 
 @dataclass(frozen=True)
 class ApcoreSettings:
@@ -46,6 +51,19 @@ class ApcoreSettings:
     tracing: bool | dict | None
     metrics: bool | dict | None
     embedded_server: bool | dict | None
+    extensions_dir: str | None
+    module_validators: list[str]
+    task_max_concurrent: int
+    task_max_tasks: int
+    task_cleanup_age: int
+    cancel_default_timeout: int | None
+    serve_validate_inputs: bool
+    serve_metrics: bool
+    serve_log_level: str | None
+    serve_tags: list[str] | None
+    serve_prefix: str | None
+    hot_reload: bool
+    hot_reload_paths: list[str]
 
 
 def get_apcore_settings() -> ApcoreSettings:
@@ -227,6 +245,169 @@ def get_apcore_settings() -> ApcoreSettings:
         if isinstance(embedded_server, dict):
             _validate_embedded_server_dict(embedded_server)
 
+    # --- v0.3.0 settings ---
+
+    extensions_dir = getattr(settings, "APCORE_EXTENSIONS_DIR", None)
+    if extensions_dir is not None and not isinstance(extensions_dir, str):
+        actual = type(extensions_dir).__name__
+        raise ImproperlyConfigured(
+            "APCORE_EXTENSIONS_DIR must be a string path." f" Got: {actual}"
+        )
+
+    module_validators = getattr(settings, "APCORE_MODULE_VALIDATORS", [])
+    if module_validators is None:
+        module_validators = []
+    if not isinstance(module_validators, list) or not all(
+        isinstance(v, str) for v in module_validators
+    ):
+        raise ImproperlyConfigured(
+            "APCORE_MODULE_VALIDATORS must be a list of" " dotted path strings."
+        )
+
+    task_max_concurrent = getattr(
+        settings,
+        "APCORE_TASK_MAX_CONCURRENT",
+        DEFAULT_TASK_MAX_CONCURRENT,
+    )
+    if task_max_concurrent is None:
+        task_max_concurrent = DEFAULT_TASK_MAX_CONCURRENT
+    if not isinstance(task_max_concurrent, int) or isinstance(
+        task_max_concurrent, bool
+    ):
+        actual = type(task_max_concurrent).__name__
+        raise ImproperlyConfigured(
+            "APCORE_TASK_MAX_CONCURRENT must be a positive"
+            f" integer. Got: {actual}"
+        )
+    if task_max_concurrent < 1:
+        raise ImproperlyConfigured(
+            "APCORE_TASK_MAX_CONCURRENT must be a positive"
+            f" integer. Got: {task_max_concurrent}"
+        )
+
+    task_max_tasks = getattr(
+        settings,
+        "APCORE_TASK_MAX_TASKS",
+        DEFAULT_TASK_MAX_TASKS,
+    )
+    if task_max_tasks is None:
+        task_max_tasks = DEFAULT_TASK_MAX_TASKS
+    if not isinstance(task_max_tasks, int) or isinstance(task_max_tasks, bool):
+        actual = type(task_max_tasks).__name__
+        raise ImproperlyConfigured(
+            "APCORE_TASK_MAX_TASKS must be a positive" f" integer. Got: {actual}"
+        )
+    if task_max_tasks < 1:
+        raise ImproperlyConfigured(
+            "APCORE_TASK_MAX_TASKS must be a positive"
+            f" integer. Got: {task_max_tasks}"
+        )
+
+    task_cleanup_age = getattr(
+        settings,
+        "APCORE_TASK_CLEANUP_AGE",
+        DEFAULT_TASK_CLEANUP_AGE,
+    )
+    if task_cleanup_age is None:
+        task_cleanup_age = DEFAULT_TASK_CLEANUP_AGE
+    if not isinstance(task_cleanup_age, int) or isinstance(task_cleanup_age, bool):
+        actual = type(task_cleanup_age).__name__
+        raise ImproperlyConfigured(
+            "APCORE_TASK_CLEANUP_AGE must be a non-negative"
+            f" integer. Got: {actual}"
+        )
+    if task_cleanup_age < 0:
+        raise ImproperlyConfigured(
+            "APCORE_TASK_CLEANUP_AGE must be a non-negative"
+            f" integer. Got: {task_cleanup_age}"
+        )
+
+    cancel_default_timeout = getattr(
+        settings,
+        "APCORE_CANCEL_DEFAULT_TIMEOUT",
+        None,
+    )
+    if cancel_default_timeout is not None:
+        if not isinstance(cancel_default_timeout, int) or isinstance(
+            cancel_default_timeout, bool
+        ):
+            actual = type(cancel_default_timeout).__name__
+            raise ImproperlyConfigured(
+                "APCORE_CANCEL_DEFAULT_TIMEOUT must be a"
+                f" positive integer. Got: {actual}"
+            )
+        if cancel_default_timeout < 1:
+            raise ImproperlyConfigured(
+                "APCORE_CANCEL_DEFAULT_TIMEOUT must be a"
+                f" positive integer. Got: {cancel_default_timeout}"
+            )
+
+    serve_validate_inputs = getattr(
+        settings,
+        "APCORE_SERVE_VALIDATE_INPUTS",
+        False,
+    )
+    if serve_validate_inputs is None:
+        serve_validate_inputs = False
+    if not isinstance(serve_validate_inputs, bool):
+        actual = type(serve_validate_inputs).__name__
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_VALIDATE_INPUTS must be a boolean." f" Got: {actual}"
+        )
+
+    serve_metrics = getattr(settings, "APCORE_SERVE_METRICS", False)
+    if serve_metrics is None:
+        serve_metrics = False
+    if not isinstance(serve_metrics, bool):
+        actual = type(serve_metrics).__name__
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_METRICS must be a boolean." f" Got: {actual}"
+        )
+
+    serve_log_level = getattr(settings, "APCORE_SERVE_LOG_LEVEL", None)
+    if serve_log_level is not None:
+        if serve_log_level not in VALID_SERVE_LOG_LEVELS:
+            choices = ", ".join(VALID_SERVE_LOG_LEVELS)
+            raise ImproperlyConfigured(
+                "APCORE_SERVE_LOG_LEVEL must be one of:"
+                f" {choices}. Got: '{serve_log_level}'"
+            )
+
+    serve_tags = getattr(settings, "APCORE_SERVE_TAGS", None)
+    if serve_tags is not None:
+        if not isinstance(serve_tags, list) or not all(
+            isinstance(t, str) for t in serve_tags
+        ):
+            raise ImproperlyConfigured(
+                "APCORE_SERVE_TAGS must be a list of strings."
+            )
+
+    serve_prefix = getattr(settings, "APCORE_SERVE_PREFIX", None)
+    if serve_prefix is not None and not isinstance(serve_prefix, str):
+        actual = type(serve_prefix).__name__
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_PREFIX must be a string." f" Got: {actual}"
+        )
+
+    hot_reload = getattr(settings, "APCORE_HOT_RELOAD", False)
+    if hot_reload is None:
+        hot_reload = False
+    if not isinstance(hot_reload, bool):
+        actual = type(hot_reload).__name__
+        raise ImproperlyConfigured(
+            "APCORE_HOT_RELOAD must be a boolean." f" Got: {actual}"
+        )
+
+    hot_reload_paths = getattr(settings, "APCORE_HOT_RELOAD_PATHS", [])
+    if hot_reload_paths is None:
+        hot_reload_paths = []
+    if not isinstance(hot_reload_paths, list) or not all(
+        isinstance(p, str) for p in hot_reload_paths
+    ):
+        raise ImproperlyConfigured(
+            "APCORE_HOT_RELOAD_PATHS must be a list of" " string paths."
+        )
+
     return ApcoreSettings(
         module_dir=module_dir,
         auto_discover=auto_discover,
@@ -245,6 +426,19 @@ def get_apcore_settings() -> ApcoreSettings:
         tracing=tracing,
         metrics=metrics,
         embedded_server=embedded_server,
+        extensions_dir=extensions_dir,
+        module_validators=module_validators,
+        task_max_concurrent=task_max_concurrent,
+        task_max_tasks=task_max_tasks,
+        task_cleanup_age=task_cleanup_age,
+        cancel_default_timeout=cancel_default_timeout,
+        serve_validate_inputs=serve_validate_inputs,
+        serve_metrics=serve_metrics,
+        serve_log_level=serve_log_level,
+        serve_tags=serve_tags,
+        serve_prefix=serve_prefix,
+        hot_reload=hot_reload,
+        hot_reload_paths=hot_reload_paths,
     )
 
 
