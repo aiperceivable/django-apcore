@@ -1,8 +1,12 @@
 """Singleton apcore.Registry and Executor wrappers for Django.
 
-Provides process-level singletons for Registry and Executor, both lazily
-created on first access. Thread-safe via module-level locks protecting
-singleton creation.
+Provides process-level singletons for Registry, ExtensionManager, and
+Executor, all lazily created on first access. Thread-safe via module-level
+locks protecting singleton creation.
+
+The ExtensionManager (created by ``setup_extensions()``) replaces the
+previous manual middleware/ACL/tracing resolution. ``get_executor()`` now
+delegates assembly to ``ExtensionManager.apply()``.
 """
 
 from __future__ import annotations
@@ -20,6 +24,9 @@ logger = logging.getLogger("django_apcore")
 _registry: Registry | None = None
 _lock = threading.Lock()
 
+_ext_manager: Any = None
+_ext_manager_lock = threading.Lock()
+
 _executor: Any = None
 _executor_lock = threading.Lock()
 
@@ -31,8 +38,6 @@ _metrics_collector_lock = threading.Lock()
 
 _embedded_server: Any = None
 _embedded_server_lock = threading.Lock()
-
-_tracing_exporter: Any = None
 
 
 def get_registry() -> Registry:
@@ -53,11 +58,34 @@ def get_registry() -> Registry:
     return _registry
 
 
+def get_extension_manager() -> Any:
+    """Return the singleton ExtensionManager for this Django process.
+
+    The extension manager is lazily created on first call via
+    ``setup_extensions()`` from ``django_apcore.extensions``.
+
+    Returns:
+        The shared apcore.ExtensionManager instance.
+    """
+    global _ext_manager
+    if _ext_manager is None:
+        with _ext_manager_lock:
+            if _ext_manager is None:
+                from django_apcore.extensions import setup_extensions
+                from django_apcore.settings import get_apcore_settings
+
+                settings = get_apcore_settings()
+                _ext_manager = setup_extensions(settings)
+                logger.debug("Created ExtensionManager via setup_extensions()")
+    return _ext_manager
+
+
 def get_executor() -> Any:
     """Return the singleton apcore Executor for this Django process.
 
-    The executor is lazily created on first call, configured from
-    APCORE_* settings (middlewares, ACL, executor_config, observability).
+    The executor is lazily created on first call. Assembly of middlewares,
+    ACL, and span exporters is delegated to the ExtensionManager via
+    ``ext_mgr.apply(registry, executor)``.
 
     Returns:
         The shared apcore.Executor instance.
@@ -66,82 +94,24 @@ def get_executor() -> Any:
     if _executor is None:
         with _executor_lock:
             if _executor is None:
+                from apcore import Executor
+
                 from django_apcore.settings import get_apcore_settings
 
                 settings = get_apcore_settings()
                 registry = get_registry()
-
-                middlewares = _resolve_middlewares(settings.middlewares)
-
-                if settings.observability_logging:
-                    obs_mw = _resolve_obs_logging_middleware(
-                        settings.observability_logging
-                    )
-                    middlewares.insert(0, obs_mw)
-
-                if settings.tracing:
-                    tracing_mw = _resolve_tracing_middleware(settings.tracing)
-                    middlewares.insert(0, tracing_mw)
-
-                if settings.metrics:
-                    collector = get_metrics_collector()
-                    if collector is not None:
-                        from apcore.observability.metrics import (
-                            MetricsMiddleware,
-                        )
-
-                        middlewares.insert(0, MetricsMiddleware(collector=collector))
-
-                acl = _resolve_acl(settings.acl_path)
                 config = _resolve_config(settings.executor_config)
 
-                from apcore import Executor
+                _executor = Executor(registry, config=config)
 
-                _executor = Executor(
-                    registry,
-                    middlewares=middlewares,
-                    acl=acl,
-                    config=config,
-                )
+                # Let ExtensionManager wire middlewares, ACL, span exporters
+                ext_mgr = get_extension_manager()
+                ext_mgr.apply(registry, _executor)
+
                 logger.debug(
-                    "Created apcore.Executor with %d middlewares",
-                    len(middlewares),
+                    "Created apcore.Executor with ExtensionManager assembly"
                 )
     return _executor
-
-
-def _resolve_middlewares(paths: list[str]) -> list[Any]:
-    """Import and instantiate middleware classes from dotted paths.
-
-    Args:
-        paths: List of dotted path strings (e.g., 'myapp.middleware.LoggingMiddleware').
-
-    Returns:
-        List of instantiated middleware objects.
-    """
-    middlewares = []
-    for path in paths:
-        module_path, class_name = path.rsplit(".", 1)
-        mod = importlib.import_module(module_path)
-        cls = getattr(mod, class_name)
-        middlewares.append(cls())
-    return middlewares
-
-
-def _resolve_acl(path: str | None) -> Any:
-    """Load ACL from a YAML file path.
-
-    Args:
-        path: File path to ACL YAML, or None.
-
-    Returns:
-        ACL instance or None.
-    """
-    if path is None:
-        return None
-    from apcore import ACL
-
-    return ACL.load(path)
 
 
 def _resolve_config(data: dict[str, Any] | None) -> Any:
@@ -158,117 +128,6 @@ def _resolve_config(data: dict[str, Any] | None) -> Any:
     from apcore import Config
 
     return Config(data=data)
-
-
-def _resolve_obs_logging_middleware(
-    config: bool | dict,
-) -> Any:
-    """Create an ObsLoggingMiddleware from settings.
-
-    Args:
-        config: True for defaults, or a dict with log_inputs,
-            log_outputs, level, format, redact_sensitive options.
-
-    Returns:
-        An ObsLoggingMiddleware instance.
-    """
-    from apcore import ObsLoggingMiddleware
-
-    if config is True:
-        return ObsLoggingMiddleware()
-
-    kwargs: dict[str, Any] = {}
-    if "log_inputs" in config:
-        kwargs["log_inputs"] = config["log_inputs"]
-    if "log_outputs" in config:
-        kwargs["log_outputs"] = config["log_outputs"]
-
-    # Create a ContextLogger if any logger options are specified
-    logger_keys = {"level", "format", "redact_sensitive"}
-    if logger_keys & config.keys():
-        from apcore import ContextLogger
-
-        logger_kwargs: dict[str, Any] = {
-            "name": "apcore.obs_logging",
-        }
-        if "level" in config:
-            logger_kwargs["level"] = config["level"]
-        if "format" in config:
-            logger_kwargs["format"] = config["format"]
-        if "redact_sensitive" in config:
-            logger_kwargs["redact_sensitive"] = config["redact_sensitive"]
-        kwargs["logger"] = ContextLogger(**logger_kwargs)
-
-    return ObsLoggingMiddleware(**kwargs)
-
-
-def _resolve_tracing_middleware(config: bool | dict) -> Any:
-    """Create a TracingMiddleware from settings.
-
-    Also stores the exporter in ``_tracing_exporter`` so it can be
-    shut down on reset (important for OTLPExporter which flushes spans).
-
-    Args:
-        config: True for defaults, or a dict with exporter/sampling options.
-
-    Returns:
-        A TracingMiddleware instance.
-    """
-    global _tracing_exporter
-    from apcore.observability.tracing import TracingMiddleware
-
-    if config is True:
-        from apcore.observability.tracing import StdoutExporter
-
-        _tracing_exporter = StdoutExporter()
-        return TracingMiddleware(exporter=_tracing_exporter)
-
-    exporter_name = config.get("exporter", "stdout")
-    exporter = _resolve_tracing_exporter(exporter_name, config)
-    _tracing_exporter = exporter
-
-    kwargs: dict[str, Any] = {"exporter": exporter}
-    if "sampling_rate" in config:
-        kwargs["sampling_rate"] = config["sampling_rate"]
-    if "sampling_strategy" in config:
-        kwargs["sampling_strategy"] = config["sampling_strategy"]
-
-    return TracingMiddleware(**kwargs)
-
-
-def _resolve_tracing_exporter(name: str, config: dict) -> Any:
-    """Resolve a tracing exporter by name or dotted path.
-
-    Args:
-        name: "stdout", "in_memory", "otlp", or a dotted import path.
-        config: The full tracing config dict for OTLP options.
-
-    Returns:
-        An exporter instance.
-    """
-    if name == "stdout":
-        from apcore.observability.tracing import StdoutExporter
-
-        return StdoutExporter()
-    if name == "in_memory":
-        from apcore.observability.tracing import InMemoryExporter
-
-        return InMemoryExporter()
-    if name == "otlp":
-        from apcore.observability.tracing import OTLPExporter
-
-        kwargs: dict[str, Any] = {}
-        if "otlp_endpoint" in config:
-            kwargs["endpoint"] = config["otlp_endpoint"]
-        if "otlp_service_name" in config:
-            kwargs["service_name"] = config["otlp_service_name"]
-        return OTLPExporter(**kwargs)
-
-    # Dotted path import
-    module_path, class_name = name.rsplit(".", 1)
-    mod = importlib.import_module(module_path)
-    cls = getattr(mod, class_name)
-    return cls()
 
 
 def get_metrics_collector() -> Any | None:
@@ -380,6 +239,17 @@ def start_embedded_server() -> Any | None:
         if version is not None:
             kwargs["version"] = version
 
+        # v0.4.0 params
+        metrics_collector = get_metrics_collector()
+        if metrics_collector is not None:
+            kwargs["metrics_collector"] = metrics_collector
+        if settings.serve_validate_inputs:
+            kwargs["validate_inputs"] = settings.serve_validate_inputs
+        if settings.serve_tags:
+            kwargs["tags"] = settings.serve_tags
+        if settings.serve_prefix:
+            kwargs["prefix"] = settings.serve_prefix
+
         server = MCPServer(registry_or_executor, **kwargs)
         server.start()
         _embedded_server = server
@@ -470,31 +340,30 @@ def _reset_context_factory() -> None:
 
 
 def _reset_executor() -> None:
-    """Reset the singleton executor. For testing only.
-
-    Also shuts down the tracing exporter if one was created (important
-    for OTLPExporter which needs to flush pending spans).
-    """
-    global _executor, _tracing_exporter
+    """Reset the singleton executor. For testing only."""
+    global _executor
     with _executor_lock:
-        if _tracing_exporter is not None:
-            if hasattr(_tracing_exporter, "shutdown"):
-                with contextlib.suppress(Exception):
-                    _tracing_exporter.shutdown()
-            _tracing_exporter = None
         _executor = None
+
+
+def _reset_extension_manager() -> None:
+    """Reset the singleton extension manager. For testing only."""
+    global _ext_manager
+    with _ext_manager_lock:
+        _ext_manager = None
 
 
 def _reset_registry() -> None:
     """Reset the singleton registry. For testing only.
 
     This causes the next call to get_registry() to create a fresh
-    Registry instance. Also resets the executor and context factory
-    since they depend on the registry.
+    Registry instance. Also resets the extension manager, executor,
+    and context factory since they depend on the registry.
     """
     global _registry
     with _lock:
         _registry = None
+    _reset_extension_manager()
     _reset_executor()
     _reset_context_factory()
     _reset_metrics_collector()

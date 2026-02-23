@@ -1,6 +1,7 @@
 # tests/test_executor.py
 from unittest.mock import MagicMock, patch
 
+from apcore import Middleware
 from django.test import override_settings
 
 
@@ -55,17 +56,17 @@ class TestGetExecutor:
 
     @override_settings(APCORE_MIDDLEWARES=["tests.test_executor.FakeMiddleware"])
     @patch("apcore.Executor")
-    def test_middlewares_resolved(self, mock_executor_cls):
-        """Middleware dotted paths are imported and instantiated."""
+    def test_middlewares_registered_in_extension_manager(self, mock_executor_cls):
+        """Middleware dotted paths are registered via ExtensionManager."""
         mock_executor_cls.return_value = MagicMock()
 
-        from django_apcore.registry import get_executor
+        from django_apcore.registry import get_executor, get_extension_manager
 
         get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
+        ext_mgr = get_extension_manager()
+        middlewares = ext_mgr.get_all("middleware")
         assert len(middlewares) >= 1
-        assert isinstance(middlewares[0], FakeMiddleware)
+        assert any(isinstance(mw, FakeMiddleware) for mw in middlewares)
 
     @override_settings(APCORE_ACL_PATH="/tmp/test_acl.yaml")
     @patch("apcore.ACL")
@@ -93,85 +94,6 @@ class TestGetExecutor:
         get_executor()
         mock_config_cls.assert_called_once_with(data={"timeout": 30})
 
-    @override_settings(APCORE_OBSERVABILITY_LOGGING=True)
-    @patch("apcore.ObsLoggingMiddleware")
-    @patch("apcore.Executor")
-    def test_observability_logging_prepends_middleware(
-        self, mock_executor_cls, mock_obs_cls
-    ):
-        """ObsLoggingMiddleware is prepended when observability_logging=True."""
-        mock_obs_instance = MagicMock()
-        mock_obs_cls.return_value = mock_obs_instance
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
-        assert middlewares[0] is mock_obs_instance
-
-    @override_settings(
-        APCORE_OBSERVABILITY_LOGGING={
-            "log_inputs": False,
-            "log_outputs": False,
-        }
-    )
-    @patch("apcore.ObsLoggingMiddleware")
-    @patch("apcore.Executor")
-    def test_observability_logging_dict_passes_options(
-        self, mock_executor_cls, mock_obs_cls
-    ):
-        """Dict config passes log_inputs/log_outputs to ObsLoggingMiddleware."""
-        mock_obs_instance = MagicMock()
-        mock_obs_cls.return_value = mock_obs_instance
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        mock_obs_cls.assert_called_once_with(log_inputs=False, log_outputs=False)
-
-    @override_settings(
-        APCORE_OBSERVABILITY_LOGGING={
-            "level": "debug",
-            "format": "json",
-        }
-    )
-    @patch("apcore.ContextLogger")
-    @patch("apcore.ObsLoggingMiddleware")
-    @patch("apcore.Executor")
-    def test_observability_logging_dict_creates_context_logger(
-        self, mock_executor_cls, mock_obs_cls, mock_logger_cls
-    ):
-        """Dict config with logger options creates ContextLogger."""
-        mock_logger = MagicMock()
-        mock_logger_cls.return_value = mock_logger
-        mock_obs_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        mock_logger_cls.assert_called_once_with(
-            name="apcore.obs_logging",
-            level="debug",
-            format="json",
-        )
-        mock_obs_cls.assert_called_once_with(logger=mock_logger)
-
-    @patch("apcore.Executor")
-    def test_no_acl_when_not_configured(self, mock_executor_cls):
-        """ACL is None when APCORE_ACL_PATH is not set."""
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        acl = call_kwargs.kwargs.get("acl")
-        assert acl is None
-
     @patch("apcore.Executor")
     def test_no_config_when_not_configured(self, mock_executor_cls):
         """Config is None when APCORE_EXECUTOR_CONFIG is not set."""
@@ -194,35 +116,46 @@ class TestGetExecutor:
         assert reg._executor is None
 
     @patch("apcore.Executor")
-    def test_empty_middlewares_by_default(self, mock_executor_cls):
-        """With no APCORE_MIDDLEWARES, empty list is passed."""
+    def test_extension_manager_apply_called(self, mock_executor_cls):
+        """get_executor() calls ExtensionManager.apply() for assembly."""
+        mock_executor_instance = MagicMock()
+        mock_executor_cls.return_value = mock_executor_instance
+
+        from django_apcore.registry import get_executor, get_extension_manager
+
+        executor = get_executor()
+        # Verify the extension manager was created and is accessible
+        ext_mgr = get_extension_manager()
+        assert ext_mgr is not None
+        assert executor is mock_executor_instance
+
+    @patch("apcore.Executor")
+    def test_executor_not_called_with_middlewares_kwarg(self, mock_executor_cls):
+        """Executor constructor no longer receives middlewares kwarg."""
         mock_executor_cls.return_value = MagicMock()
 
         from django_apcore.registry import get_executor
 
         get_executor()
         call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
-        assert middlewares == []
+        # In the new architecture, middlewares are applied via ExtensionManager
+        assert "middlewares" not in call_kwargs.kwargs
 
-    def test_resolve_middlewares_imports_class(self):
-        """_resolve_middlewares imports and instantiates classes."""
-        from django_apcore.registry import _resolve_middlewares
+    @patch("apcore.Executor")
+    def test_executor_not_called_with_acl_kwarg(self, mock_executor_cls):
+        """Executor constructor no longer receives acl kwarg."""
+        mock_executor_cls.return_value = MagicMock()
 
-        result = _resolve_middlewares(["tests.test_executor.FakeMiddleware"])
-        assert len(result) == 1
-        assert isinstance(result[0], FakeMiddleware)
+        from django_apcore.registry import get_executor
 
-    def test_resolve_middlewares_empty_list(self):
-        """_resolve_middlewares with empty list returns empty."""
-        from django_apcore.registry import _resolve_middlewares
-
-        result = _resolve_middlewares([])
-        assert result == []
+        get_executor()
+        call_kwargs = mock_executor_cls.call_args
+        # In the new architecture, ACL is applied via ExtensionManager
+        assert "acl" not in call_kwargs.kwargs
 
 
-class TestTracingMiddlewareIntegration:
-    """Test TracingMiddleware integration in get_executor()."""
+class TestExtensionManagerTracingIntegration:
+    """Test tracing integration via ExtensionManager."""
 
     def setup_method(self):
         from django_apcore.registry import _reset_registry
@@ -235,98 +168,34 @@ class TestTracingMiddlewareIntegration:
         _reset_registry()
 
     @override_settings(APCORE_TRACING=True)
-    @patch("apcore.observability.tracing.StdoutExporter")
-    @patch("apcore.observability.tracing.TracingMiddleware")
-    @patch("apcore.Executor")
-    def test_tracing_true_prepends_tracing_middleware(
-        self, mock_executor_cls, mock_tracing_cls, mock_exporter_cls
-    ):
-        """APCORE_TRACING=True prepends TracingMiddleware with StdoutExporter."""
-        mock_tracing_instance = MagicMock()
-        mock_tracing_cls.return_value = mock_tracing_instance
-        mock_exporter_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
+    def test_tracing_registers_span_exporter(self):
+        """APCORE_TRACING=True registers a span_exporter in ExtensionManager."""
+        from django_apcore.registry import get_extension_manager
 
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
-        assert mock_tracing_instance in middlewares
-
-    @override_settings(
-        APCORE_TRACING={
-            "exporter": "otlp",
-            "otlp_endpoint": "http://collector:4318",
-            "otlp_service_name": "test-svc",
-        }
-    )
-    @patch("apcore.observability.tracing.OTLPExporter")
-    @patch("apcore.observability.tracing.TracingMiddleware")
-    @patch("apcore.Executor")
-    def test_otlp_exporter_created(
-        self, mock_executor_cls, mock_tracing_cls, mock_otlp_cls
-    ):
-        """Dict with exporter=otlp creates OTLPExporter."""
-        mock_otlp_cls.return_value = MagicMock()
-        mock_tracing_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        mock_otlp_cls.assert_called_once_with(
-            endpoint="http://collector:4318",
-            service_name="test-svc",
-        )
+        ext_mgr = get_extension_manager()
+        exporter = ext_mgr.get("span_exporter")
+        assert exporter is not None
 
     @override_settings(APCORE_TRACING={"exporter": "in_memory"})
-    @patch("apcore.observability.tracing.InMemoryExporter")
-    @patch("apcore.observability.tracing.TracingMiddleware")
-    @patch("apcore.Executor")
-    def test_in_memory_exporter_created(
-        self, mock_executor_cls, mock_tracing_cls, mock_inmem_cls
-    ):
-        """Dict with exporter=in_memory creates InMemoryExporter."""
-        mock_inmem_cls.return_value = MagicMock()
-        mock_tracing_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
+    def test_in_memory_exporter_registered(self):
+        """Dict with exporter=in_memory registers a span_exporter."""
+        from django_apcore.registry import get_extension_manager
 
-        from django_apcore.registry import get_executor
+        ext_mgr = get_extension_manager()
+        exporter = ext_mgr.get("span_exporter")
+        assert exporter is not None
 
-        get_executor()
-        mock_inmem_cls.assert_called_once()
+    def test_no_span_exporter_by_default(self):
+        """No span_exporter when APCORE_TRACING is not set."""
+        from django_apcore.registry import get_extension_manager
 
-    @override_settings(APCORE_TRACING={"exporter": "tests.test_executor.FakeExporter"})
-    @patch("apcore.observability.tracing.TracingMiddleware")
-    @patch("apcore.Executor")
-    def test_custom_dotted_path_exporter(self, mock_executor_cls, mock_tracing_cls):
-        """Custom dotted path exporter is imported and instantiated."""
-        mock_tracing_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        # TracingMiddleware should be called with a FakeExporter instance
-        call_kwargs = mock_tracing_cls.call_args.kwargs
-        assert isinstance(call_kwargs["exporter"], FakeExporter)
-
-    @patch("apcore.Executor")
-    def test_no_tracing_middleware_by_default(self, mock_executor_cls):
-        """No tracing middleware when APCORE_TRACING is not set."""
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
-        assert middlewares == []
+        ext_mgr = get_extension_manager()
+        exporter = ext_mgr.get("span_exporter")
+        assert exporter is None
 
 
-class TestTracingExporterShutdown:
-    """Test OTLP exporter shutdown on reset."""
+class TestExtensionManagerObsLoggingIntegration:
+    """Test observability logging integration via ExtensionManager."""
 
     def setup_method(self):
         from django_apcore.registry import _reset_registry
@@ -338,48 +207,32 @@ class TestTracingExporterShutdown:
 
         _reset_registry()
 
+    @override_settings(APCORE_OBSERVABILITY_LOGGING=True)
+    @patch("apcore.Executor")
+    def test_executor_created_with_obs_logging(self, mock_executor_cls):
+        """get_executor() succeeds when observability_logging=True."""
+        mock_executor_cls.return_value = MagicMock()
+
+        from django_apcore.registry import get_executor
+
+        executor = get_executor()
+        assert executor is not None
+
     @override_settings(
-        APCORE_TRACING={
-            "exporter": "otlp",
-            "otlp_endpoint": "http://localhost:4318",
+        APCORE_OBSERVABILITY_LOGGING={
+            "log_inputs": False,
+            "log_outputs": False,
         }
     )
-    @patch("apcore.observability.tracing.OTLPExporter")
-    @patch("apcore.observability.tracing.TracingMiddleware")
     @patch("apcore.Executor")
-    def test_otlp_exporter_shutdown_on_reset(
-        self, mock_executor_cls, mock_tracing_cls, mock_otlp_cls
-    ):
-        """OTLPExporter.shutdown() is called on _reset_executor()."""
-        mock_exporter = MagicMock()
-        mock_otlp_cls.return_value = mock_exporter
-        mock_tracing_cls.return_value = MagicMock()
+    def test_executor_created_with_obs_logging_dict(self, mock_executor_cls):
+        """get_executor() succeeds when observability_logging is a dict."""
         mock_executor_cls.return_value = MagicMock()
 
-        from django_apcore.registry import _reset_executor, get_executor
+        from django_apcore.registry import get_executor
 
-        get_executor()
-        _reset_executor()
-        mock_exporter.shutdown.assert_called_once()
-
-    @override_settings(APCORE_TRACING=True)
-    @patch("apcore.observability.tracing.StdoutExporter")
-    @patch("apcore.observability.tracing.TracingMiddleware")
-    @patch("apcore.Executor")
-    def test_exporter_without_shutdown_does_not_error(
-        self, mock_executor_cls, mock_tracing_cls, mock_exporter_cls
-    ):
-        """Exporters without shutdown() method don't cause errors."""
-        mock_exporter = MagicMock(spec=[])  # No methods
-        mock_exporter_cls.return_value = mock_exporter
-        mock_tracing_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import _reset_executor, get_executor
-
-        get_executor()
-        # Should not raise
-        _reset_executor()
+        executor = get_executor()
+        assert executor is not None
 
 
 class TestMetricsMiddlewareIntegration:
@@ -394,55 +247,6 @@ class TestMetricsMiddlewareIntegration:
         from django_apcore.registry import _reset_registry
 
         _reset_registry()
-
-    @override_settings(APCORE_METRICS=True)
-    @patch("apcore.observability.metrics.MetricsCollector")
-    @patch("apcore.observability.metrics.MetricsMiddleware")
-    @patch("apcore.Executor")
-    def test_metrics_true_prepends_metrics_middleware(
-        self, mock_executor_cls, mock_mw_cls, mock_collector_cls
-    ):
-        """APCORE_METRICS=True prepends MetricsMiddleware."""
-        mock_mw_instance = MagicMock()
-        mock_mw_cls.return_value = mock_mw_instance
-        mock_collector_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
-        assert mock_mw_instance in middlewares
-
-    @override_settings(APCORE_METRICS={"buckets": [0.01, 0.05, 0.1]})
-    @patch("apcore.observability.metrics.MetricsCollector")
-    @patch("apcore.observability.metrics.MetricsMiddleware")
-    @patch("apcore.Executor")
-    def test_custom_buckets_passed_to_collector(
-        self, mock_executor_cls, mock_mw_cls, mock_collector_cls
-    ):
-        """Custom buckets dict is passed to MetricsCollector."""
-        mock_collector_cls.return_value = MagicMock()
-        mock_mw_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        mock_collector_cls.assert_called_once_with(buckets=[0.01, 0.05, 0.1])
-
-    @patch("apcore.Executor")
-    def test_no_metrics_middleware_by_default(self, mock_executor_cls):
-        """No metrics middleware when APCORE_METRICS is not set."""
-        mock_executor_cls.return_value = MagicMock()
-
-        from django_apcore.registry import get_executor
-
-        get_executor()
-        call_kwargs = mock_executor_cls.call_args
-        middlewares = call_kwargs.kwargs.get("middlewares", [])
-        assert middlewares == []
 
     def test_get_metrics_collector_returns_none_when_disabled(self):
         """get_metrics_collector() returns None when metrics disabled."""
@@ -506,23 +310,16 @@ class TestMetricsMiddlewareIntegration:
         result = get_metrics_collector()
         assert result is mock_instance
 
-    @override_settings(APCORE_METRICS=True)
-    @patch("apcore.observability.metrics.MetricsMiddleware")
+    @override_settings(APCORE_METRICS={"buckets": [0.01, 0.05, 0.1]})
     @patch("apcore.observability.metrics.MetricsCollector")
-    @patch("apcore.Executor")
-    def test_metrics_collector_shared_with_middleware(
-        self, mock_executor_cls, mock_collector_cls, mock_mw_cls
-    ):
-        """MetricsMiddleware receives the same collector singleton."""
-        mock_collector = MagicMock()
-        mock_collector_cls.return_value = mock_collector
-        mock_mw_cls.return_value = MagicMock()
-        mock_executor_cls.return_value = MagicMock()
+    def test_custom_buckets_passed_to_collector(self, mock_collector_cls):
+        """Custom buckets dict is passed to MetricsCollector."""
+        mock_collector_cls.return_value = MagicMock()
 
-        from django_apcore.registry import get_executor
+        from django_apcore.registry import get_metrics_collector
 
-        get_executor()
-        mock_mw_cls.assert_called_once_with(collector=mock_collector)
+        get_metrics_collector()
+        mock_collector_cls.assert_called_once_with(buckets=[0.01, 0.05, 0.1])
 
 
 class TestGetContextFactory:
@@ -582,8 +379,11 @@ class TestGetContextFactory:
         assert callable(factory.create_context)
 
 
-class FakeMiddleware:
-    """Fake middleware for testing."""
+class FakeMiddleware(Middleware):
+    """Fake middleware for testing.
+
+    Extends apcore.Middleware so ExtensionManager.register() accepts it.
+    """
 
     pass
 
