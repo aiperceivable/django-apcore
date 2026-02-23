@@ -10,6 +10,12 @@ def test_package_version_exists():
     assert len(django_apcore.__version__) > 0
 
 
+def test_version():
+    import django_apcore
+
+    assert django_apcore.__version__ == "0.3.0"
+
+
 def test_package_importable():
     """django_apcore can be imported without errors."""
     import django_apcore  # noqa: F401
