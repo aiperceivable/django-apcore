@@ -1,16 +1,17 @@
 # tests/test_commands.py
-"""Tests for the apcore_scan management command."""
+"""Tests for the apcore_scan and apcore_tasks management commands."""
 
 from __future__ import annotations
 
 import re
 from io import StringIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from django.core.management import CommandError, call_command
 
 SCAN_CMD = "django_apcore.management.commands.apcore_scan"
+TASKS_CMD = "django_apcore.management.commands.apcore_tasks"
 
 
 class TestApCoreScanCommand:
@@ -252,3 +253,102 @@ class TestApCoreScanCommand:
             call_command("apcore_scan", "--source", "ninja", stdout=out)
             output = out.getvalue()
             assert "No endpoints found" in output or "0" in output
+
+
+class TestApcoreTasksCommand:
+    """Test the apcore_tasks management command."""
+
+    def test_command_exists(self):
+        """apcore_tasks command is discoverable by Django."""
+        from django.core.management import get_commands
+
+        commands = get_commands()
+        assert "apcore_tasks" in commands
+
+    def test_no_subcommand_raises_error(self):
+        """Missing subcommand raises CommandError."""
+        with patch(f"{TASKS_CMD}.get_task_manager"):
+            with pytest.raises(CommandError, match="Subcommand required"):
+                call_command("apcore_tasks")
+
+    def test_list_no_tasks(self):
+        """list subcommand with no tasks prints 'No tasks found.'."""
+        with patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm:
+            mock_tm = MagicMock()
+            mock_tm.list_tasks.return_value = []
+            mock_gtm.return_value = mock_tm
+            out = StringIO()
+            call_command("apcore_tasks", "list", stdout=out)
+            assert "No tasks" in out.getvalue()
+
+    def test_list_with_tasks(self):
+        """list subcommand displays task_id, module_id, and status."""
+        with patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm:
+            mock_task = MagicMock()
+            mock_task.task_id = "abc-123"
+            mock_task.module_id = "test.module"
+            mock_task.status.value = "running"
+            mock_tm = MagicMock()
+            mock_tm.list_tasks.return_value = [mock_task]
+            mock_gtm.return_value = mock_tm
+            out = StringIO()
+            call_command("apcore_tasks", "list", stdout=out)
+            output = out.getvalue()
+            assert "abc-123" in output
+            assert "test.module" in output
+
+    def test_list_with_status_filter(self):
+        """list --status passes a TaskStatus enum to list_tasks."""
+        with (
+            patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm,
+            patch(f"{TASKS_CMD}.TaskStatus") as mock_ts_cls,
+        ):
+            mock_tm = MagicMock()
+            mock_tm.list_tasks.return_value = []
+            mock_gtm.return_value = mock_tm
+            mock_ts_cls.__getitem__ = MagicMock(return_value="RUNNING")
+            out = StringIO()
+            call_command("apcore_tasks", "list", "--status", "running", stdout=out)
+            mock_ts_cls.__getitem__.assert_called_once_with("RUNNING")
+            mock_tm.list_tasks.assert_called_once_with(status="RUNNING")
+
+    def test_cleanup(self):
+        """cleanup subcommand calls tm.cleanup with --max-age value."""
+        with patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm:
+            mock_tm = MagicMock()
+            mock_tm.cleanup.return_value = 5
+            mock_gtm.return_value = mock_tm
+            out = StringIO()
+            call_command("apcore_tasks", "cleanup", "--max-age", "1800", stdout=out)
+            mock_tm.cleanup.assert_called_once_with(max_age_seconds=1800)
+            assert "5" in out.getvalue()
+
+    def test_cleanup_default_max_age(self):
+        """cleanup subcommand defaults to max_age=3600."""
+        with patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm:
+            mock_tm = MagicMock()
+            mock_tm.cleanup.return_value = 0
+            mock_gtm.return_value = mock_tm
+            out = StringIO()
+            call_command("apcore_tasks", "cleanup", stdout=out)
+            mock_tm.cleanup.assert_called_once_with(max_age_seconds=3600)
+
+    def test_cancel_success(self):
+        """cancel subcommand reports success when tm.cancel returns True."""
+        with patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm:
+            mock_tm = MagicMock()
+            mock_tm.cancel = AsyncMock(return_value=True)
+            mock_gtm.return_value = mock_tm
+            out = StringIO()
+            call_command("apcore_tasks", "cancel", "task-123", stdout=out)
+            assert "cancelled" in out.getvalue().lower()
+
+    def test_cancel_failure(self):
+        """cancel subcommand reports failure when tm.cancel returns False."""
+        with patch(f"{TASKS_CMD}.get_task_manager") as mock_gtm:
+            mock_tm = MagicMock()
+            mock_tm.cancel = AsyncMock(return_value=False)
+            mock_gtm.return_value = mock_tm
+            out = StringIO()
+            call_command("apcore_tasks", "cancel", "task-456", stdout=out)
+            assert "could not be cancelled" in out.getvalue().lower()
