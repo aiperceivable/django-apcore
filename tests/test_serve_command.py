@@ -27,6 +27,11 @@ def _mock_settings(**overrides):
         "tracing": None,
         "metrics": None,
         "embedded_server": None,
+        "serve_validate_inputs": False,
+        "serve_metrics": False,
+        "serve_log_level": None,
+        "serve_tags": None,
+        "serve_prefix": None,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
@@ -309,3 +314,93 @@ class TestApcoreServeV02:
             call_command("apcore_serve")
             call_kwargs = mock_serve.call_args.kwargs
             assert call_kwargs.get("validate_inputs") is True
+
+
+class TestApcoreServeV030:
+    """Test v0.3.0 serve command features."""
+
+    def test_validate_inputs_flag(self):
+        """--validate-inputs flag is passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            call_command("apcore_serve", "--validate-inputs")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("validate_inputs") is True
+
+    def test_tags_passed(self):
+        """--tags is split and passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            call_command("apcore_serve", "--tags", "api,public")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("tags") == ["api", "public"]
+
+    def test_prefix_passed(self):
+        """--prefix is passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            call_command("apcore_serve", "--prefix", "my.app")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("prefix") == "my.app"
+
+    def test_log_level_passed(self):
+        """--log-level is passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            call_command("apcore_serve", "--log-level", "DEBUG")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("log_level") == "DEBUG"
+
+    def test_metrics_flag(self):
+        """--metrics flag triggers metrics_collector creation."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+            patch("django_apcore.registry.get_metrics_collector") as mock_mc,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            mock_mc.return_value = MagicMock()
+            call_command("apcore_serve", "--metrics")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("metrics_collector") is not None
+
+    def test_settings_fallback_for_tags(self):
+        """Tags fall back to APCORE_SERVE_TAGS setting."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings(serve_tags=["internal"])
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            call_command("apcore_serve")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("tags") == ["internal"]

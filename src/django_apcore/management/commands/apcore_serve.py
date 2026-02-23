@@ -30,6 +30,10 @@ def serve(
     on_startup: Any = None,
     on_shutdown: Any = None,
     validate_inputs: bool = False,
+    metrics_collector: Any = None,
+    log_level: str | None = None,
+    tags: list[str] | None = None,
+    prefix: str | None = None,
 ) -> None:
     """Delegate to apcore_mcp.serve().
 
@@ -55,10 +59,16 @@ def serve(
         kwargs["on_startup"] = on_startup
     if on_shutdown is not None:
         kwargs["on_shutdown"] = on_shutdown
-    # NOTE: validate_inputs is a reserved parameter in apcore-mcp v0.2.0.
-    # Passing it is forward-compatible but may not take effect yet.
     if validate_inputs:
         kwargs["validate_inputs"] = validate_inputs
+    if metrics_collector is not None:
+        kwargs["metrics_collector"] = metrics_collector
+    if log_level is not None:
+        kwargs["log_level"] = log_level
+    if tags is not None:
+        kwargs["tags"] = tags
+    if prefix is not None:
+        kwargs["prefix"] = prefix
 
     apcore_serve(registry_or_executor, **kwargs)
 
@@ -104,6 +114,37 @@ class Command(BaseCommand):
             dest="server_version",
             help="Server version. Default: APCORE_SERVER_VERSION setting.",
         )
+        parser.add_argument(
+            "--validate-inputs",
+            action="store_true",
+            default=None,
+            help="Enable input validation on the MCP server.",
+        )
+        parser.add_argument(
+            "--metrics",
+            action="store_true",
+            default=None,
+            help="Enable Prometheus /metrics endpoint.",
+        )
+        parser.add_argument(
+            "--log-level",
+            type=str,
+            default=None,
+            choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+            help="Set MCP server log level.",
+        )
+        parser.add_argument(
+            "--tags",
+            type=str,
+            default=None,
+            help="Filter modules by tags (comma-separated).",
+        )
+        parser.add_argument(
+            "--prefix",
+            type=str,
+            default=None,
+            help="Filter modules by ID prefix.",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         verbosity = options["verbosity"]
@@ -117,6 +158,29 @@ class Command(BaseCommand):
         port = options["port"] if options["port"] is not None else settings.serve_port
         name = options["name"] or settings.server_name
         version = options["server_version"] or settings.server_version
+
+        # Resolve v0.3.0 arguments with settings fallbacks
+        validate_inputs_flag = options.get("validate_inputs")
+        validate_inputs = (
+            validate_inputs_flag
+            if validate_inputs_flag is not None
+            else (settings.serve_validate_inputs or settings.validate_inputs)
+        )
+
+        metrics_flag = options.get("metrics")
+        serve_metrics = (
+            metrics_flag if metrics_flag is not None else settings.serve_metrics
+        )
+
+        log_level = options.get("log_level") or settings.serve_log_level
+
+        tags_str = options.get("tags")
+        if tags_str:
+            tags = [t.strip() for t in tags_str.split(",") if t.strip()]
+        else:
+            tags = settings.serve_tags
+
+        prefix = options.get("prefix") or settings.serve_prefix
 
         # Validate port range
         if not (1 <= port <= 65535):
@@ -184,6 +248,13 @@ class Command(BaseCommand):
             if verbosity >= 1:
                 stdout.write("[django-apcore] Server stopped.")
 
+        # Resolve metrics_collector
+        metrics_collector = None
+        if serve_metrics:
+            from django_apcore.registry import get_metrics_collector
+
+            metrics_collector = get_metrics_collector()
+
         # Delegate to apcore-mcp
         try:
             serve(
@@ -195,7 +266,11 @@ class Command(BaseCommand):
                 version=version,
                 on_startup=on_startup,
                 on_shutdown=on_shutdown,
-                validate_inputs=settings.validate_inputs,
+                validate_inputs=validate_inputs,
+                metrics_collector=metrics_collector,
+                log_level=log_level,
+                tags=tags,
+                prefix=prefix,
             )
         except ImportError as e:
             msg = (
