@@ -159,7 +159,7 @@ class Command(BaseCommand):
         name = options["name"] or settings.server_name
         version = options["server_version"] or settings.server_version
 
-        # Resolve v0.3.0 arguments with settings fallbacks
+        # Resolve v0.1.0 arguments with settings fallbacks
         validate_inputs_flag = options.get("validate_inputs")
         validate_inputs = (
             validate_inputs_flag

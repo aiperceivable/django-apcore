@@ -316,8 +316,8 @@ class TestApcoreServeV02:
             assert call_kwargs.get("validate_inputs") is True
 
 
-class TestApcoreServeV030:
-    """Test v0.3.0 serve command features."""
+class TestApcoreServeV010:
+    """Test v0.1.0 serve command features."""
 
     def test_validate_inputs_flag(self):
         """--validate-inputs flag is passed to serve()."""

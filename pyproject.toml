@@ -4,13 +4,25 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-apcore"
-version = "0.3.0"
-description = "Django App that bridges the apcore protocol to the Django ecosystem"
+version = "0.1.0"
+description = "Django integration for apcore — scan existing REST APIs and serve them as MCP tools for AI agents"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "Engineering Team" },
+]
+keywords = [
+    "django",
+    "mcp",
+    "model-context-protocol",
+    "apcore",
+    "ai-agent",
+    "llm",
+    "tool-use",
+    "drf",
+    "django-ninja",
+    "openapi",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

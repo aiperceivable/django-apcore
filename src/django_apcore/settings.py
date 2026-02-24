@@ -24,6 +24,10 @@ DEFAULT_BINDING_PATTERN = "*.binding.yaml"
 VALID_TRANSPORTS = ("stdio", "streamable-http", "sse")
 VALID_SAMPLING_STRATEGIES = ("full", "proportional", "error_first", "off")
 
+DEFAULT_EXPLORER_ENABLED = False
+DEFAULT_EXPLORER_URL_PREFIX = "/apcore"
+DEFAULT_EXPLORER_ALLOW_EXECUTE = False
+
 DEFAULT_TASK_MAX_CONCURRENT = 10
 DEFAULT_TASK_MAX_TASKS = 1000
 DEFAULT_TASK_CLEANUP_AGE = 3600
@@ -62,6 +66,9 @@ class ApcoreSettings:
     serve_log_level: str | None
     serve_tags: list[str] | None
     serve_prefix: str | None
+    explorer_enabled: bool
+    explorer_url_prefix: str
+    explorer_allow_execute: bool
     hot_reload: bool
     hot_reload_paths: list[str]
 
@@ -245,7 +252,7 @@ def get_apcore_settings() -> ApcoreSettings:
         if isinstance(embedded_server, dict):
             _validate_embedded_server_dict(embedded_server)
 
-    # --- v0.3.0 settings ---
+    # --- v0.1.0 settings ---
 
     extensions_dir = getattr(settings, "APCORE_EXTENSIONS_DIR", None)
     if extensions_dir is not None and not isinstance(extensions_dir, str):
@@ -384,6 +391,40 @@ def get_apcore_settings() -> ApcoreSettings:
             "APCORE_SERVE_PREFIX must be a string." f" Got: {actual}"
         )
 
+    # --- Explorer settings ---
+
+    explorer_enabled = getattr(
+        settings, "APCORE_EXPLORER_ENABLED", DEFAULT_EXPLORER_ENABLED
+    )
+    if explorer_enabled is None:
+        explorer_enabled = DEFAULT_EXPLORER_ENABLED
+    if not isinstance(explorer_enabled, bool):
+        actual = type(explorer_enabled).__name__
+        raise ImproperlyConfigured(
+            "APCORE_EXPLORER_ENABLED must be a boolean." f" Got: {actual}"
+        )
+
+    explorer_url_prefix = getattr(
+        settings, "APCORE_EXPLORER_URL_PREFIX", DEFAULT_EXPLORER_URL_PREFIX
+    )
+    if explorer_url_prefix is None:
+        explorer_url_prefix = DEFAULT_EXPLORER_URL_PREFIX
+    if not isinstance(explorer_url_prefix, str) or len(explorer_url_prefix) == 0:
+        raise ImproperlyConfigured(
+            "APCORE_EXPLORER_URL_PREFIX must be a non-empty string."
+        )
+
+    explorer_allow_execute = getattr(
+        settings, "APCORE_EXPLORER_ALLOW_EXECUTE", DEFAULT_EXPLORER_ALLOW_EXECUTE
+    )
+    if explorer_allow_execute is None:
+        explorer_allow_execute = DEFAULT_EXPLORER_ALLOW_EXECUTE
+    if not isinstance(explorer_allow_execute, bool):
+        actual = type(explorer_allow_execute).__name__
+        raise ImproperlyConfigured(
+            "APCORE_EXPLORER_ALLOW_EXECUTE must be a boolean." f" Got: {actual}"
+        )
+
     hot_reload = getattr(settings, "APCORE_HOT_RELOAD", False)
     if hot_reload is None:
         hot_reload = False
@@ -432,6 +473,9 @@ def get_apcore_settings() -> ApcoreSettings:
         serve_log_level=serve_log_level,
         serve_tags=serve_tags,
         serve_prefix=serve_prefix,
+        explorer_enabled=explorer_enabled,
+        explorer_url_prefix=explorer_url_prefix,
+        explorer_allow_execute=explorer_allow_execute,
         hot_reload=hot_reload,
         hot_reload_paths=hot_reload_paths,
     )

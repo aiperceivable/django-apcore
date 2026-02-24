@@ -6,14 +6,14 @@
 
 | Field | Value |
 |-------|-------|
-| **Document Title** | Technical Design: django-apcore v0.3.0 |
+| **Document Title** | Technical Design: django-apcore v0.1.0 |
 | **Version** | 2.0 |
 | **Author** | Engineering Team |
 | **Reviewers** | -- |
 | **Date** | 2026-02-23 |
 | **Status** | Draft |
 | **Related PRD** | [docs/django-apcore/prd.md](./prd.md) |
-| **Related Design** | [docs/plans/2026-02-23-v0.3.0-redesign-design.md](../plans/2026-02-23-v0.3.0-redesign-design.md) |
+| **Related Design** | [docs/plans/2026-02-23-v0.1.0-redesign-design.md](../plans/2026-02-23-v0.1.0-redesign-design.md) |
 
 ---
 
@@ -76,7 +76,7 @@ flowchart TB
     Developer["[Person]<br/>Django Developer<br/><i>Uses manage.py commands to scan,<br/>serve, export, and manage tasks</i>"]
     AIAgent["[Person]<br/>AI Agent / Client<br/><i>Claude Desktop, Cursor, OpenAI API<br/>consumers that call MCP tools</i>"]
 
-    DjangoApcore["[System]<br/>django-apcore v0.3.0<br/><i>Django App that bridges Django APIs<br/>to apcore protocol via Extension System</i>"]
+    DjangoApcore["[System]<br/>django-apcore v0.1.0<br/><i>Django App that bridges Django APIs<br/>to apcore protocol via Extension System</i>"]
 
     ApcoreSDK["[External System]<br/>apcore SDK v0.6.0<br/><i>ExtensionManager, Registry, Executor,<br/>AsyncTaskManager, CancelToken, TraceContext</i>"]
     ApcoreMCP["[External System]<br/>apcore-mcp-python v0.4.0<br/><i>MCP Server (stdio/streamable-http/sse),<br/>OpenAI Tools, Prometheus metrics</i>"]
@@ -100,11 +100,11 @@ flowchart TB
 
 ### 5.1 Architecture Decision: Extension-First
 
-**Decision:** django-apcore v0.3.0 adopts an Extension-First architecture that uses apcore v0.6.0's `ExtensionManager` as the primary composition mechanism.
+**Decision:** django-apcore v0.1.0 adopts an Extension-First architecture that uses apcore v0.6.0's `ExtensionManager` as the primary composition mechanism.
 
 **Previous approach (v0.2.0):** Manual singleton wiring — `get_registry()` and `get_executor()` manually configured discoverers, validators, middleware, ACL, and observability.
 
-**New approach (v0.3.0):** Extension-First — `setup_extensions()` registers Django-specific implementations as extensions, then `ExtensionManager.apply(registry, executor)` auto-assembles everything.
+**New approach (v0.1.0):** Extension-First — `setup_extensions()` registers Django-specific implementations as extensions, then `ExtensionManager.apply(registry, executor)` auto-assembles everything.
 
 **Rationale:**
 
@@ -122,7 +122,7 @@ flowchart TB
         Settings["ApcoreSettings<br/>(30 APCORE_* settings)"]
     end
 
-    subgraph "Extension Layer (NEW in v0.3.0)"
+    subgraph "Extension Layer (NEW in v0.1.0)"
         SetupExt["setup_extensions(settings)"]
         ExtMgr["ExtensionManager"]
         Discoverer["DjangoDiscoverer<br/>(Discoverer protocol)"]
@@ -184,7 +184,7 @@ flowchart TB
 
 ```
 src/django_apcore/
-├── __init__.py                    # v0.3.0, public API exports
+├── __init__.py                    # v0.1.0, public API exports
 ├── apps.py                        # ApcoreAppConfig (Extension-First startup)
 ├── settings.py                    # 30 APCORE_* settings with validation
 ├── extensions.py                  # ★ NEW: DjangoDiscoverer, DjangoModuleValidator,
@@ -402,7 +402,7 @@ async def elicit(context: Context, message: str, schema: dict | None = None) -> 
     """Request user input from MCP client."""
 ```
 
-**New shortcuts (v0.3.0):**
+**New shortcuts (v0.1.0):**
 
 ```python
 def cancellable_call(
@@ -495,7 +495,7 @@ class ApcoreAppConfig(AppConfig):
 | `APCORE_METRICS` | dict\|None | `None` | Metrics config |
 | `APCORE_EMBEDDED_SERVER` | dict\|None | `None` | Embedded MCP server |
 
-**New settings (13, v0.3.0):**
+**New settings (13, v0.1.0):**
 
 | Setting | Type | Default | Purpose |
 |---------|------|---------|---------|
@@ -879,7 +879,7 @@ django-apcore/
 - apcore v0.6.0: `/Users/tercel/WorkSpace/aipartnerup/apcore-python/`
 - apcore-mcp v0.4.0: `/Users/tercel/WorkSpace/aipartnerup/apcore-mcp-python/`
 - Upstream SDK Analysis: [docs/django-apcore/upstream-sdk-analysis.md](./upstream-sdk-analysis.md)
-- Redesign Design: [docs/plans/2026-02-23-v0.3.0-redesign-design.md](../plans/2026-02-23-v0.3.0-redesign-design.md)
+- Redesign Design: [docs/plans/2026-02-23-v0.1.0-redesign-design.md](../plans/2026-02-23-v0.1.0-redesign-design.md)
 
 ---
 

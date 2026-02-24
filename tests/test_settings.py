@@ -606,10 +606,10 @@ class TestApcoreSettingsEdgeCases:
 
 
 class TestV030SettingsDefaults:
-    """Test defaults for v0.3.0 settings."""
+    """Test defaults for v0.1.0 settings."""
 
     def test_new_settings_defaults(self):
-        """All new v0.3.0 settings have sensible defaults."""
+        """All new v0.1.0 settings have sensible defaults."""
         from django_apcore.settings import get_apcore_settings
 
         s = get_apcore_settings()
@@ -629,7 +629,7 @@ class TestV030SettingsDefaults:
 
 
 class TestV030SettingsValidation:
-    """Test validation for v0.3.0 settings."""
+    """Test validation for v0.1.0 settings."""
 
     @override_settings(APCORE_TASK_MAX_CONCURRENT="not_int")
     def test_task_max_concurrent_invalid_type(self):

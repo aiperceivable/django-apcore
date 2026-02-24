@@ -1,17 +1,17 @@
 # Upstream SDK Analysis: apcore / apcore-python / apcore-mcp-python
 
 > **Date**: 2026-02-23 (updated from 2026-02-20)
-> **Context**: Findings from building django-apcore v0.2.0, updated for v0.3.0 redesign targeting apcore v0.6.0 and apcore-mcp v0.4.0.
+> **Context**: Findings from building django-apcore v0.2.0, updated for v0.1.0 redesign targeting apcore v0.6.0 and apcore-mcp v0.4.0.
 > **Scope**: Maps the full upstream API surface, identifies what django-apcore uses, and documents new capabilities for integration.
 
 ---
 
 ## 1. Upstream Version Summary
 
-| Library | Previous (django-apcore v0.2.0) | Current (django-apcore v0.3.0) | Key Changes |
+| Library | Previous (django-apcore v0.2.0) | Current (django-apcore v0.1.0) | Key Changes |
 |---------|--------------------------------|-------------------------------|-------------|
 | **apcore** | v0.5.0 | v0.6.0 | Extension System, AsyncTaskManager, CancelToken, W3C TraceContext, Registry hooks, streaming annotations |
-| **apcore-mcp** | v0.3.0 | v0.4.0 | Requires apcore>=0.6.0, Prometheus metrics, trace_id passback, input validation |
+| **apcore-mcp** | v0.1.0 | v0.4.0 | Requires apcore>=0.6.0, Prometheus metrics, trace_id passback, input validation |
 
 ---
 
@@ -19,7 +19,7 @@
 
 ### 2.1 New in v0.6.0
 
-| Component | API | django-apcore v0.3.0 Usage |
+| Component | API | django-apcore v0.1.0 Usage |
 |-----------|-----|---------------------------|
 | **ExtensionManager** | `ExtensionManager()`, `.register(point, ext)`, `.get(point)`, `.get_all(point)`, `.apply(registry, executor)`, `.list_points()` | Core composition mechanism — `setup_extensions()` builds and applies |
 | **ExtensionPoint** | 5 built-in: discoverer, middleware, acl, span_exporter, module_validator | All 5 used via Django settings |
@@ -42,7 +42,7 @@
 
 ### 2.2 Existing API (Continued Usage)
 
-| Component | Used by django-apcore v0.3.0 |
+| Component | Used by django-apcore v0.1.0 |
 |-----------|------------------------------|
 | **Registry** | `Registry(config=)`, `.register()`, `.count`, `.on()`, `.discover()`, `.module_ids`, `.get_definition()`, `.has()`, `.list()` |
 | **BindingLoader** | `.load_binding_dir(dir, registry, pattern=)` — via DjangoDiscoverer |
@@ -75,9 +75,9 @@
 
 ## 3. apcore-mcp v0.4.0 — Full API Surface
 
-### 3.1 Changes from v0.3.0
+### 3.1 Changes from v0.1.0
 
-| Component | Change | django-apcore v0.3.0 Usage |
+| Component | Change | django-apcore v0.1.0 Usage |
 |-----------|--------|---------------------------|
 | **Dependency** | Requires apcore>=0.6.0 (was >=0.5.0) | Aligned |
 | **serve()** | `metrics_collector=`, `validate_inputs=`, `tags=`, `prefix=`, `log_level=` params | Exposed via settings + CLI args |
@@ -86,7 +86,7 @@
 
 ### 3.2 Full API Usage
 
-| Component | Used by django-apcore v0.3.0 |
+| Component | Used by django-apcore v0.1.0 |
 |-----------|------------------------------|
 | **serve()** | Full API: transport, host, port, name, version, on_startup, on_shutdown, tags, prefix, log_level, validate_inputs, metrics_collector |
 | **to_openai_tools()** | Full API: embed_annotations, strict, tags, prefix |
@@ -113,7 +113,7 @@
 
 ## 4. Integration Status
 
-All P0, P1, and P2 items from previous analysis are resolved. The v0.3.0 redesign adds:
+All P0, P1, and P2 items from previous analysis are resolved. The v0.1.0 redesign adds:
 
 | Integration | Status | Mechanism |
 |-------------|--------|-----------|
@@ -133,4 +133,4 @@ All P0, P1, and P2 items from previous analysis are resolved. The v0.3.0 redesig
 
 ## 5. Remaining Gaps
 
-None. django-apcore v0.3.0 provides full integration with all public API surfaces of apcore v0.6.0 and apcore-mcp v0.4.0.
+None. django-apcore v0.1.0 provides full integration with all public API surfaces of apcore v0.6.0 and apcore-mcp v0.4.0.

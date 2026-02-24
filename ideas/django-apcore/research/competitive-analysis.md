@@ -501,7 +501,7 @@ The Django + MCP integration space is **fragmented but active**. There are at le
 
 ### 5.1 The Draft's Assumption Was Wrong (But the Opportunity Is Real)
 
-The draft states: "Django 生态目前没有 MCP / AI-Perceivable 模块方案". This is factually incorrect -- there are 8+ packages. **However**, the opportunity is real because:
+The draft states: "The Django ecosystem currently has no MCP / AI-Perceivable module solution". This is factually incorrect -- there are 8+ packages. **However**, the opportunity is real because:
 
 1. **No dominant player**: The highest-starred Django package (274 stars) has 2.4% of fastapi-mcp's stars
 2. **Fragmentation**: 8+ packages solving similar problems = confusion, not clarity
