@@ -1,375 +1,19 @@
-"""Tests for the explorer web views and API endpoints."""
+"""Tests for the APCORE_EXPLORER_* settings and apcore_serve explorer integration."""
 
 from __future__ import annotations
 
-import json
+from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.test import RequestFactory, override_settings
+from django.core.exceptions import ImproperlyConfigured
+from django.test import override_settings
 
-from django_apcore.web.api import call_module, get_module, list_modules
-from django_apcore.web.views import explorer_page
-
-
-@pytest.fixture()
-def rf():
-    return RequestFactory()
+_CMD = "django_apcore.management.commands.apcore_serve"
 
 
-def _make_mock_module(module_id, description="", tags=None, metadata=None, version="1.0.0"):
-    """Create a mock module object."""
-    m = MagicMock()
-    m.module_id = module_id
-    m.description = description
-    m.tags = tags or []
-    m.metadata = metadata or {}
-    m.version = version
-    return m
-
-
-def _make_mock_descriptor(
-    module_id,
-    description="",
-    documentation="",
-    tags=None,
-    version="1.0.0",
-    annotations=None,
-    metadata=None,
-    input_schema=None,
-    output_schema=None,
-):
-    """Create a mock ModuleDescriptor."""
-    d = MagicMock()
-    d.module_id = module_id
-    d.description = description
-    d.documentation = documentation
-    d.tags = tags or []
-    d.version = version
-    d.annotations = annotations
-    d.metadata = metadata or {}
-    d.input_schema = input_schema or {}
-    d.output_schema = output_schema or {}
-    return d
-
-
-class TestExplorerPage:
-    """Test the HTML explorer page."""
-
-    def test_returns_html(self, rf):
-        request = rf.get("/apcore/")
-        response = explorer_page(request)
-        assert response.status_code == 200
-        assert response["Content-Type"] == "text/html"
-
-    def test_contains_title(self, rf):
-        request = rf.get("/apcore/")
-        response = explorer_page(request)
-        content = response.content.decode()
-        assert "apcore Explorer" in content
-
-    def test_contains_javascript(self, rf):
-        request = rf.get("/apcore/")
-        response = explorer_page(request)
-        content = response.content.decode()
-        assert "fetch(" in content
-        assert "loadDetail" in content
-        assert "execModule" in content
-
-
-class TestListModules:
-    """Test GET /modules/ endpoint."""
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_empty_registry(self, mock_reg, rf):
-        registry = MagicMock()
-        registry.iter.return_value = iter([])
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/")
-        response = list_modules(request)
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert data == []
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_returns_modules(self, mock_reg, rf):
-        mod1 = _make_mock_module("hello", description="Greet someone", tags=["demo"])
-        mod2 = _make_mock_module("math.add", description="Add numbers")
-        registry = MagicMock()
-        registry.iter.return_value = iter([("hello", mod1), ("math.add", mod2)])
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/")
-        response = list_modules(request)
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert len(data) == 2
-        assert data[0]["module_id"] == "hello"
-        assert data[0]["description"] == "Greet someone"
-        assert data[0]["tags"] == ["demo"]
-        assert data[1]["module_id"] == "math.add"
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_module_metadata_fields(self, mock_reg, rf):
-        mod = _make_mock_module(
-            "test",
-            metadata={"http_method": "POST", "url_rule": "/api/test/"},
-            version="2.0.0",
-        )
-        registry = MagicMock()
-        registry.iter.return_value = iter([("test", mod)])
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/")
-        response = list_modules(request)
-        data = json.loads(response.content)
-        assert data[0]["http_method"] == "POST"
-        assert data[0]["url_rule"] == "/api/test/"
-        assert data[0]["version"] == "2.0.0"
-
-    def test_rejects_post(self, rf):
-        request = rf.post("/apcore/modules/")
-        response = list_modules(request)
-        assert response.status_code == 405
-
-
-class TestGetModule:
-    """Test GET /modules/<module_id>/ endpoint."""
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_returns_module_detail(self, mock_reg, rf):
-        descriptor = _make_mock_descriptor(
-            "hello",
-            description="Greet someone",
-            documentation="Greet someone by name",
-            tags=["demo"],
-            input_schema={"type": "object", "properties": {"name": {"type": "string"}}},
-            output_schema={"type": "object"},
-        )
-        registry = MagicMock()
-        registry.get_definition.return_value = descriptor
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/hello/")
-        response = get_module(request, "hello")
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert data["module_id"] == "hello"
-        assert data["description"] == "Greet someone"
-        assert data["documentation"] == "Greet someone by name"
-        assert data["tags"] == ["demo"]
-        assert data["input_schema"]["properties"]["name"]["type"] == "string"
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_module_not_found(self, mock_reg, rf):
-        registry = MagicMock()
-        registry.get_definition.return_value = None
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/nonexistent/")
-        response = get_module(request, "nonexistent")
-        assert response.status_code == 404
-        data = json.loads(response.content)
-        assert "not found" in data["error"]
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_annotations_dict(self, mock_reg, rf):
-        descriptor = _make_mock_descriptor(
-            "test", annotations={"readOnly": True, "destructive": False}
-        )
-        registry = MagicMock()
-        registry.get_definition.return_value = descriptor
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/test/")
-        response = get_module(request, "test")
-        data = json.loads(response.content)
-        assert data["annotations"] == {"readOnly": True, "destructive": False}
-
-    @patch("django_apcore.web.api.get_registry")
-    def test_dotted_module_id(self, mock_reg, rf):
-        descriptor = _make_mock_descriptor("math.add")
-        registry = MagicMock()
-        registry.get_definition.return_value = descriptor
-        mock_reg.return_value = registry
-
-        request = rf.get("/apcore/modules/math.add/")
-        response = get_module(request, "math.add")
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert data["module_id"] == "math.add"
-
-
-class TestCallModule:
-    """Test POST /modules/<module_id>/call/ endpoint."""
-
-    @override_settings(APCORE_EXPLORER_ALLOW_EXECUTE=False)
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_execute_disabled(self, mock_settings, rf):
-        settings = MagicMock()
-        settings.explorer_allow_execute = False
-        mock_settings.return_value = settings
-
-        request = rf.post(
-            "/apcore/modules/hello/call/",
-            data=json.dumps({"name": "World"}),
-            content_type="application/json",
-        )
-        response = call_module(request, "hello")
-        assert response.status_code == 403
-        data = json.loads(response.content)
-        assert "disabled" in data["error"]
-
-    @patch("django_apcore.web.api.get_context_factory")
-    @patch("django_apcore.web.api.get_executor")
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_execute_success(self, mock_settings, mock_get_exec, mock_cf, rf):
-        settings = MagicMock()
-        settings.explorer_allow_execute = True
-        mock_settings.return_value = settings
-
-        executor = MagicMock()
-        executor.call.return_value = {"message": "Hello, World!"}
-        mock_get_exec.return_value = executor
-
-        factory = MagicMock()
-        factory.create_context.return_value = MagicMock()
-        mock_cf.return_value = factory
-
-        request = rf.post(
-            "/apcore/modules/hello/call/",
-            data=json.dumps({"name": "World"}),
-            content_type="application/json",
-        )
-        response = call_module(request, "hello")
-        assert response.status_code == 200
-        data = json.loads(response.content)
-        assert data["output"]["message"] == "Hello, World!"
-
-    @patch("django_apcore.web.api.get_context_factory")
-    @patch("django_apcore.web.api.get_executor")
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_module_not_found(self, mock_settings, mock_get_exec, mock_cf, rf):
-        from apcore.errors import ModuleNotFoundError as ApcoreNotFound
-
-        settings = MagicMock()
-        settings.explorer_allow_execute = True
-        mock_settings.return_value = settings
-
-        executor = MagicMock()
-        executor.call.side_effect = ApcoreNotFound("nonexistent")
-        mock_get_exec.return_value = executor
-
-        factory = MagicMock()
-        factory.create_context.return_value = MagicMock()
-        mock_cf.return_value = factory
-
-        request = rf.post(
-            "/apcore/modules/nonexistent/call/",
-            data=json.dumps({}),
-            content_type="application/json",
-        )
-        response = call_module(request, "nonexistent")
-        assert response.status_code == 404
-
-    @patch("django_apcore.web.api.get_context_factory")
-    @patch("django_apcore.web.api.get_executor")
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_validation_error(self, mock_settings, mock_get_exec, mock_cf, rf):
-        from apcore.errors import SchemaValidationError
-
-        settings = MagicMock()
-        settings.explorer_allow_execute = True
-        mock_settings.return_value = settings
-
-        executor = MagicMock()
-        executor.call.side_effect = SchemaValidationError("invalid input")
-        mock_get_exec.return_value = executor
-
-        factory = MagicMock()
-        factory.create_context.return_value = MagicMock()
-        mock_cf.return_value = factory
-
-        request = rf.post(
-            "/apcore/modules/hello/call/",
-            data=json.dumps({"bad": "input"}),
-            content_type="application/json",
-        )
-        response = call_module(request, "hello")
-        assert response.status_code == 400
-
-    @patch("django_apcore.web.api.get_context_factory")
-    @patch("django_apcore.web.api.get_executor")
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_empty_body(self, mock_settings, mock_get_exec, mock_cf, rf):
-        settings = MagicMock()
-        settings.explorer_allow_execute = True
-        mock_settings.return_value = settings
-
-        executor = MagicMock()
-        executor.call.return_value = {"result": "ok"}
-        mock_get_exec.return_value = executor
-
-        factory = MagicMock()
-        factory.create_context.return_value = MagicMock()
-        mock_cf.return_value = factory
-
-        request = rf.post(
-            "/apcore/modules/hello/call/",
-            content_type="application/json",
-        )
-        response = call_module(request, "hello")
-        assert response.status_code == 200
-
-    @patch("django_apcore.web.api.get_context_factory")
-    @patch("django_apcore.web.api.get_executor")
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_server_error(self, mock_settings, mock_get_exec, mock_cf, rf):
-        settings = MagicMock()
-        settings.explorer_allow_execute = True
-        mock_settings.return_value = settings
-
-        executor = MagicMock()
-        executor.call.side_effect = RuntimeError("Something went wrong")
-        mock_get_exec.return_value = executor
-
-        factory = MagicMock()
-        factory.create_context.return_value = MagicMock()
-        mock_cf.return_value = factory
-
-        request = rf.post(
-            "/apcore/modules/hello/call/",
-            data=json.dumps({}),
-            content_type="application/json",
-        )
-        response = call_module(request, "hello")
-        assert response.status_code == 500
-
-    def test_rejects_get(self, rf):
-        request = rf.get("/apcore/modules/hello/call/")
-        response = call_module(request, "hello")
-        assert response.status_code == 405
-
-    @patch("django_apcore.web.api.get_apcore_settings")
-    def test_invalid_json_body(self, mock_settings, rf):
-        settings = MagicMock()
-        settings.explorer_allow_execute = True
-        mock_settings.return_value = settings
-
-        request = rf.post(
-            "/apcore/modules/hello/call/",
-            data="not-valid-json{",
-            content_type="application/json",
-        )
-        response = call_module(request, "hello")
-        assert response.status_code == 400
-        data = json.loads(response.content)
-        assert "Invalid JSON" in data["error"]
-
-
-class TestExplorerSettings:
-    """Test APCORE_EXPLORER_* settings validation."""
+class TestExplorerSettingsDefaults:
+    """Test APCORE_EXPLORER_* settings defaults."""
 
     def test_default_explorer_disabled(self):
         from django_apcore.settings import get_apcore_settings
@@ -377,17 +21,21 @@ class TestExplorerSettings:
         s = get_apcore_settings()
         assert s.explorer_enabled is False
 
-    def test_default_explorer_url_prefix(self):
+    def test_default_explorer_prefix(self):
         from django_apcore.settings import get_apcore_settings
 
         s = get_apcore_settings()
-        assert s.explorer_url_prefix == "/apcore"
+        assert s.explorer_prefix == "/explorer"
 
     def test_default_explorer_allow_execute(self):
         from django_apcore.settings import get_apcore_settings
 
         s = get_apcore_settings()
         assert s.explorer_allow_execute is False
+
+
+class TestExplorerSettingsCustomValues:
+    """Test APCORE_EXPLORER_* settings with custom values."""
 
     @override_settings(APCORE_EXPLORER_ENABLED=True)
     def test_explorer_enabled_true(self):
@@ -396,12 +44,12 @@ class TestExplorerSettings:
         s = get_apcore_settings()
         assert s.explorer_enabled is True
 
-    @override_settings(APCORE_EXPLORER_URL_PREFIX="/browse")
-    def test_custom_url_prefix(self):
+    @override_settings(APCORE_EXPLORER_PREFIX="/browse")
+    def test_custom_prefix(self):
         from django_apcore.settings import get_apcore_settings
 
         s = get_apcore_settings()
-        assert s.explorer_url_prefix == "/browse"
+        assert s.explorer_prefix == "/browse"
 
     @override_settings(APCORE_EXPLORER_ALLOW_EXECUTE=True)
     def test_allow_execute_true(self):
@@ -410,106 +58,234 @@ class TestExplorerSettings:
         s = get_apcore_settings()
         assert s.explorer_allow_execute is True
 
+
+class TestExplorerSettingsValidation:
+    """Test APCORE_EXPLORER_* settings validation."""
+
     @override_settings(APCORE_EXPLORER_ENABLED="yes")
     def test_explorer_enabled_invalid_type(self):
-        from django.core.exceptions import ImproperlyConfigured
-
         from django_apcore.settings import get_apcore_settings
 
         with pytest.raises(ImproperlyConfigured, match="APCORE_EXPLORER_ENABLED"):
             get_apcore_settings()
 
-    @override_settings(APCORE_EXPLORER_URL_PREFIX="")
-    def test_url_prefix_empty_rejected(self):
-        from django.core.exceptions import ImproperlyConfigured
-
+    @override_settings(APCORE_EXPLORER_PREFIX="no-slash")
+    def test_prefix_must_start_with_slash(self):
         from django_apcore.settings import get_apcore_settings
 
-        with pytest.raises(ImproperlyConfigured, match="APCORE_EXPLORER_URL_PREFIX"):
+        with pytest.raises(ImproperlyConfigured, match="APCORE_EXPLORER_PREFIX"):
             get_apcore_settings()
 
-    @override_settings(APCORE_EXPLORER_URL_PREFIX=123)
-    def test_url_prefix_invalid_type(self):
-        from django.core.exceptions import ImproperlyConfigured
-
+    @override_settings(APCORE_EXPLORER_PREFIX=123)
+    def test_prefix_invalid_type(self):
         from django_apcore.settings import get_apcore_settings
 
-        with pytest.raises(ImproperlyConfigured, match="APCORE_EXPLORER_URL_PREFIX"):
+        with pytest.raises(ImproperlyConfigured, match="APCORE_EXPLORER_PREFIX"):
             get_apcore_settings()
 
     @override_settings(APCORE_EXPLORER_ALLOW_EXECUTE="true")
     def test_allow_execute_invalid_type(self):
-        from django.core.exceptions import ImproperlyConfigured
-
         from django_apcore.settings import get_apcore_settings
 
         with pytest.raises(ImproperlyConfigured, match="APCORE_EXPLORER_ALLOW_EXECUTE"):
             get_apcore_settings()
 
+    @override_settings(APCORE_EXPLORER_ENABLED=None)
+    def test_none_uses_default(self):
+        from django_apcore.settings import get_apcore_settings
 
-class TestMakeSerializable:
-    """Test the _make_serializable helper."""
+        s = get_apcore_settings()
+        assert s.explorer_enabled is False
 
-    def test_plain_dict(self):
-        from django_apcore.web.api import _make_serializable
+    @override_settings(APCORE_EXPLORER_PREFIX=None)
+    def test_prefix_none_uses_default(self):
+        from django_apcore.settings import get_apcore_settings
 
-        result = _make_serializable({"key": "value"})
-        assert result == {"key": "value"}
-
-    def test_pydantic_model(self):
-        from django_apcore.web.api import _make_serializable
-
-        mock_model = MagicMock()
-        mock_model.model_dump.return_value = {"field": 42}
-        result = _make_serializable(mock_model)
-        assert result == {"field": 42}
-
-    def test_nested_list(self):
-        from django_apcore.web.api import _make_serializable
-
-        result = _make_serializable([{"a": 1}, {"b": 2}])
-        assert result == [{"a": 1}, {"b": 2}]
-
-    def test_primitive(self):
-        from django_apcore.web.api import _make_serializable
-
-        assert _make_serializable("hello") == "hello"
-        assert _make_serializable(42) == 42
+        s = get_apcore_settings()
+        assert s.explorer_prefix == "/explorer"
 
 
-class TestAnnotationsToDict:
-    """Test the _annotations_to_dict helper."""
+def _mock_settings(**overrides):
+    defaults = {
+        "serve_transport": "stdio",
+        "serve_host": "127.0.0.1",
+        "serve_port": 8000,
+        "server_name": "apcore-mcp",
+        "server_version": None,
+        "middlewares": [],
+        "acl_path": None,
+        "executor_config": None,
+        "observability_logging": None,
+        "validate_inputs": False,
+        "tracing": None,
+        "metrics": None,
+        "embedded_server": None,
+        "serve_validate_inputs": False,
+        "serve_metrics": False,
+        "serve_log_level": None,
+        "serve_tags": None,
+        "serve_prefix": None,
+        "explorer_enabled": False,
+        "explorer_prefix": "/explorer",
+        "explorer_allow_execute": False,
+    }
+    defaults.update(overrides)
+    return MagicMock(**defaults)
 
-    def test_none_returns_none(self):
-        from django_apcore.web.api import _annotations_to_dict
 
-        assert _annotations_to_dict(None) is None
-
-    def test_dict_passthrough(self):
-        from django_apcore.web.api import _annotations_to_dict
-
-        result = _annotations_to_dict({"readOnly": True})
-        assert result == {"readOnly": True}
-
-    def test_unknown_type_returns_none(self):
-        from django_apcore.web.api import _annotations_to_dict
-
-        assert _annotations_to_dict("not a dict") is None
+def _mock_registry(count=5):
+    mock = MagicMock()
+    mock.count = count
+    return mock
 
 
-class TestExplorerUrlPatterns:
-    """Test the URL configuration module."""
+class TestServeCommandExplorer:
+    """Test apcore_serve command passes explorer params to serve()."""
 
-    def test_urlpatterns_exist(self):
-        from django_apcore.urls import explorer_urlpatterns
+    def test_explorer_flag_passed(self):
+        """--explorer flag is passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
 
-        assert len(explorer_urlpatterns) == 4
+            from django.core.management import call_command
 
-    def test_urlpatterns_names(self):
-        from django_apcore.urls import explorer_urlpatterns
+            call_command("apcore_serve", "--explorer")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("explorer") is True
 
-        names = [p.name for p in explorer_urlpatterns]
-        assert "explorer" in names
-        assert "list-modules" in names
-        assert "module-detail" in names
-        assert "call-module" in names
+    def test_explorer_prefix_passed(self):
+        """--explorer-prefix is passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            from django.core.management import call_command
+
+            call_command("apcore_serve", "--explorer", "--explorer-prefix", "/browse")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("explorer_prefix") == "/browse"
+
+    def test_allow_execute_passed(self):
+        """--allow-execute is passed to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            from django.core.management import call_command
+
+            call_command("apcore_serve", "--explorer", "--allow-execute")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("allow_execute") is True
+
+    def test_settings_fallback_for_explorer(self):
+        """Explorer settings fall back to APCORE_EXPLORER_* settings."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings(
+                explorer_enabled=True,
+                explorer_prefix="/tools",
+                explorer_allow_execute=True,
+            )
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            from django.core.management import call_command
+
+            call_command("apcore_serve")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("explorer") is True
+            assert call_kwargs.get("explorer_prefix") == "/tools"
+            assert call_kwargs.get("allow_execute") is True
+
+    def test_no_explorer_by_default(self):
+        """Explorer is not enabled by default."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            from django.core.management import call_command
+
+            call_command("apcore_serve")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("explorer") is False
+
+    def test_explorer_output_message(self):
+        """Command outputs explorer info when enabled with HTTP transport."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings(
+                serve_transport="streamable-http",
+            )
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            from django.core.management import call_command
+
+            out = StringIO()
+            call_command(
+                "apcore_serve",
+                "--transport", "streamable-http",
+                "--explorer",
+                stdout=out,
+            )
+            assert "Explorer" in out.getvalue()
+
+
+class TestServeWrapperExplorer:
+    """Test the serve() wrapper passes explorer params correctly."""
+
+    def test_serve_passes_explorer_params(self):
+        """serve() wrapper passes explorer/explorer_prefix/allow_execute."""
+        with patch("apcore_mcp.serve") as mock_apcore_serve:
+            from django_apcore.management.commands.apcore_serve import serve
+
+            serve(
+                MagicMock(),
+                explorer=True,
+                explorer_prefix="/my-explorer",
+                allow_execute=True,
+            )
+
+            call_kwargs = mock_apcore_serve.call_args.kwargs
+            assert call_kwargs["explorer"] is True
+            assert call_kwargs["explorer_prefix"] == "/my-explorer"
+            assert call_kwargs["allow_execute"] is True
+
+    def test_serve_omits_explorer_when_disabled(self):
+        """serve() wrapper does not pass explorer params when explorer=False."""
+        with patch("apcore_mcp.serve") as mock_apcore_serve:
+            from django_apcore.management.commands.apcore_serve import serve
+
+            serve(MagicMock())
+
+            call_kwargs = mock_apcore_serve.call_args.kwargs
+            assert "explorer" not in call_kwargs
+            assert "explorer_prefix" not in call_kwargs
+            assert "allow_execute" not in call_kwargs

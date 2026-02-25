@@ -25,7 +25,7 @@ VALID_TRANSPORTS = ("stdio", "streamable-http", "sse")
 VALID_SAMPLING_STRATEGIES = ("full", "proportional", "error_first", "off")
 
 DEFAULT_EXPLORER_ENABLED = False
-DEFAULT_EXPLORER_URL_PREFIX = "/apcore"
+DEFAULT_EXPLORER_PREFIX = "/explorer"
 DEFAULT_EXPLORER_ALLOW_EXECUTE = False
 
 DEFAULT_TASK_MAX_CONCURRENT = 10
@@ -67,7 +67,7 @@ class ApcoreSettings:
     serve_tags: list[str] | None
     serve_prefix: str | None
     explorer_enabled: bool
-    explorer_url_prefix: str
+    explorer_prefix: str
     explorer_allow_execute: bool
     hot_reload: bool
     hot_reload_paths: list[str]
@@ -391,7 +391,7 @@ def get_apcore_settings() -> ApcoreSettings:
             "APCORE_SERVE_PREFIX must be a string." f" Got: {actual}"
         )
 
-    # --- Explorer settings ---
+    # --- Explorer settings (apcore-mcp Tool Explorer) ---
 
     explorer_enabled = getattr(
         settings, "APCORE_EXPLORER_ENABLED", DEFAULT_EXPLORER_ENABLED
@@ -404,14 +404,14 @@ def get_apcore_settings() -> ApcoreSettings:
             "APCORE_EXPLORER_ENABLED must be a boolean." f" Got: {actual}"
         )
 
-    explorer_url_prefix = getattr(
-        settings, "APCORE_EXPLORER_URL_PREFIX", DEFAULT_EXPLORER_URL_PREFIX
+    explorer_prefix = getattr(
+        settings, "APCORE_EXPLORER_PREFIX", DEFAULT_EXPLORER_PREFIX
     )
-    if explorer_url_prefix is None:
-        explorer_url_prefix = DEFAULT_EXPLORER_URL_PREFIX
-    if not isinstance(explorer_url_prefix, str) or len(explorer_url_prefix) == 0:
+    if explorer_prefix is None:
+        explorer_prefix = DEFAULT_EXPLORER_PREFIX
+    if not isinstance(explorer_prefix, str) or not explorer_prefix.startswith("/"):
         raise ImproperlyConfigured(
-            "APCORE_EXPLORER_URL_PREFIX must be a non-empty string."
+            "APCORE_EXPLORER_PREFIX must be a string starting with '/'."
         )
 
     explorer_allow_execute = getattr(
@@ -474,7 +474,7 @@ def get_apcore_settings() -> ApcoreSettings:
         serve_tags=serve_tags,
         serve_prefix=serve_prefix,
         explorer_enabled=explorer_enabled,
-        explorer_url_prefix=explorer_url_prefix,
+        explorer_prefix=explorer_prefix,
         explorer_allow_execute=explorer_allow_execute,
         hot_reload=hot_reload,
         hot_reload_paths=hot_reload_paths,

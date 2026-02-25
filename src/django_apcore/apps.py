@@ -49,13 +49,6 @@ class ApcoreAppConfig(AppConfig):
         count = registry.discover()
         logger.info("Auto-discovery complete: %d modules registered", count)
 
-        # Explorer
-        if settings.explorer_enabled:
-            self._register_explorer_urls(
-                settings.explorer_url_prefix,
-                settings.explorer_allow_execute,
-            )
-
         # Hot-reload
         if settings.hot_reload:
             try:
@@ -80,39 +73,6 @@ class ApcoreAppConfig(AppConfig):
                     "Failed to start embedded MCP server",
                     exc_info=True,
                 )
-
-    def _register_explorer_urls(
-        self, url_prefix: str, allow_execute: bool
-    ) -> None:
-        """Dynamically add explorer URL patterns to the root URLconf."""
-        from importlib import import_module
-
-        from django.conf import settings as django_settings
-        from django.urls import include, path
-
-        from django_apcore.urls import explorer_urlpatterns
-
-        # Normalize prefix: strip leading/trailing slashes
-        prefix = url_prefix.strip("/")
-        if prefix:
-            prefix += "/"
-
-        try:
-            urlconf_module = import_module(django_settings.ROOT_URLCONF)
-            urlconf_module.urlpatterns.append(
-                path(prefix, include((explorer_urlpatterns, "apcore_explorer")))
-            )
-            logger.info(
-                "Explorer enabled at /%s (execute=%s)",
-                prefix,
-                "on" if allow_execute else "off",
-            )
-        except Exception:
-            logger.warning(
-                "Failed to register explorer URLs at /%s",
-                prefix,
-                exc_info=True,
-            )
 
     def _register_event_listeners(self, registry: Registry) -> None:
         """Register event listeners on the registry for debug logging."""

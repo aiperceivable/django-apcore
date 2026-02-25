@@ -32,6 +32,9 @@ def _mock_settings(**overrides):
         "serve_log_level": None,
         "serve_tags": None,
         "serve_prefix": None,
+        "explorer_enabled": False,
+        "explorer_prefix": "/explorer",
+        "explorer_allow_execute": False,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)

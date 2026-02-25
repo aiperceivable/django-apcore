@@ -20,6 +20,7 @@ The core philosophy is **scan, don't rewrite**: instead of manually defining MCP
 - **Embedded MCP server mode** — start MCP server alongside Django on startup
 - **Include/exclude endpoint filtering** with regex patterns
 - **Export to OpenAI tool format** for non-MCP integrations
+- **Tool Explorer** — browser-based UI for browsing schemas and testing tools interactively (via apcore-mcp)
 - **Convenience shortcuts** — `executor_call`, `executor_call_async`, `executor_stream`, `report_progress`, `elicit`
 
 ## How It Works
@@ -143,7 +144,7 @@ pip install django-apcore[mcp]
 |-------|---------|---------|---------|
 | `ninja` | `django-ninja` | `>= 1.0` | django-ninja endpoint scanning |
 | `drf` | `drf-spectacular` | `>= 0.27` | DRF endpoint scanning via OpenAPI |
-| `mcp` | `apcore-mcp` | `>= 0.2.0` | MCP server and transport layer |
+| `mcp` | `apcore-mcp` | `>= 0.5.1` | MCP server and transport layer |
 
 ## Configuration
 
@@ -168,6 +169,9 @@ All settings are prefixed with `APCORE_` and read from Django's `settings.py`.
 | `APCORE_TRACING` | `bool \| dict \| None` | `None` | Enable tracing middleware (stdout, in_memory, otlp) |
 | `APCORE_METRICS` | `bool \| dict \| None` | `None` | Enable metrics collection middleware |
 | `APCORE_EMBEDDED_SERVER` | `bool \| dict \| None` | `None` | Start an embedded MCP server on Django startup |
+| `APCORE_EXPLORER_ENABLED` | `bool` | `False` | Enable the browser-based Tool Explorer UI on the MCP server |
+| `APCORE_EXPLORER_PREFIX` | `str` | `"/explorer"` | URL prefix for the explorer UI |
+| `APCORE_EXPLORER_ALLOW_EXECUTE` | `bool` | `False` | Allow tool execution from the explorer UI |
 
 ### Observability Logging Options
 
@@ -221,6 +225,37 @@ APCORE_EMBEDDED_SERVER = {
 }
 ```
 
+### Tool Explorer
+
+The Tool Explorer is a browser-based UI provided by [apcore-mcp](https://github.com/aipartnerup/apcore-mcp-python) for browsing tool schemas and testing tool execution interactively. It runs on the MCP server port (not the Django port).
+
+```python
+# settings.py
+APCORE_EXPLORER_ENABLED = True          # enable explorer UI
+APCORE_EXPLORER_ALLOW_EXECUTE = True    # allow Try-it execution
+# APCORE_EXPLORER_PREFIX = "/explorer"  # default prefix
+```
+
+Or via CLI flags:
+
+```bash
+python manage.py apcore_serve --transport streamable-http --explorer --allow-execute
+# Open http://127.0.0.1:8000/explorer/ in a browser
+```
+
+**Endpoints** (served by apcore-mcp on the MCP port):
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /explorer/` | Interactive HTML page (self-contained, no external dependencies) |
+| `GET /explorer/tools` | JSON array of all tools with name, description, annotations |
+| `GET /explorer/tools/<name>` | Full tool detail with inputSchema |
+| `POST /explorer/tools/<name>/call` | Execute a tool (requires `allow_execute=True`) |
+
+- **HTTP transports only** (`streamable-http`, `sse`). Silently ignored for `stdio`.
+- **Execution disabled by default** — set `APCORE_EXPLORER_ALLOW_EXECUTE = True` or `--allow-execute` to enable.
+- **No auth** — do NOT enable in production without a reverse proxy.
+
 ## Management Commands
 
 ### `apcore_scan`
@@ -255,6 +290,14 @@ python manage.py apcore_serve [options]
 | `--port` | `-p` | Port for HTTP transports |
 | `--name` | | MCP server name |
 | `--server-version` | | Server version string |
+| `--explorer` | | Enable the browser-based Tool Explorer UI (HTTP only) |
+| `--explorer-prefix` | | URL prefix for the explorer UI (default: `/explorer`) |
+| `--allow-execute` | | Allow tool execution from the explorer UI |
+| `--validate-inputs` | | Enable input validation on the MCP server |
+| `--metrics` | | Enable Prometheus `/metrics` endpoint |
+| `--log-level` | | MCP server log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+| `--tags` | | Filter modules by tags (comma-separated) |
+| `--prefix` | | Filter modules by ID prefix |
 
 ### `apcore_export`
 

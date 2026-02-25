@@ -38,7 +38,8 @@ APCORE_SERVE_HOST = "0.0.0.0"
 APCORE_SERVE_PORT = 9090
 APCORE_SERVER_NAME = "demo-mcp"
 
-# Explorer: dev/staging only. Exposes module schemas and execution via HTTP.
+# Explorer: dev/staging only. Exposes tool schemas and execution via HTTP.
 # Do NOT enable in production — there is no auth on these endpoints.
-APCORE_EXPLORER_ENABLED = True  # browse modules at /apcore/
-APCORE_EXPLORER_ALLOW_EXECUTE = True  # allow Try-it execution (calls Executor)
+# Served by the MCP server (apcore-mcp) on the MCP port, not the Django port.
+APCORE_EXPLORER_ENABLED = True  # browse tools at /explorer on MCP server
+APCORE_EXPLORER_ALLOW_EXECUTE = True  # allow Try-it execution

@@ -34,6 +34,9 @@ def serve(
     log_level: str | None = None,
     tags: list[str] | None = None,
     prefix: str | None = None,
+    explorer: bool = False,
+    explorer_prefix: str = "/explorer",
+    allow_execute: bool = False,
 ) -> None:
     """Delegate to apcore_mcp.serve().
 
@@ -69,6 +72,10 @@ def serve(
         kwargs["tags"] = tags
     if prefix is not None:
         kwargs["prefix"] = prefix
+    if explorer:
+        kwargs["explorer"] = True
+        kwargs["explorer_prefix"] = explorer_prefix
+        kwargs["allow_execute"] = allow_execute
 
     apcore_serve(registry_or_executor, **kwargs)
 
@@ -144,6 +151,26 @@ class Command(BaseCommand):
             type=str,
             default=None,
             help="Filter modules by ID prefix.",
+        )
+        parser.add_argument(
+            "--explorer",
+            action="store_true",
+            default=None,
+            help="Enable the browser-based Tool Explorer UI (HTTP transports only).",
+        )
+        parser.add_argument(
+            "--explorer-prefix",
+            type=str,
+            default=None,
+            dest="explorer_prefix",
+            help='URL prefix for the explorer UI (default: "/explorer").',
+        )
+        parser.add_argument(
+            "--allow-execute",
+            action="store_true",
+            default=None,
+            dest="allow_execute",
+            help="Allow tool execution from the explorer UI.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -255,6 +282,34 @@ class Command(BaseCommand):
 
             metrics_collector = get_metrics_collector()
 
+        # Resolve explorer settings
+        explorer_flag = options.get("explorer")
+        explorer_enabled = (
+            explorer_flag
+            if explorer_flag is not None
+            else settings.explorer_enabled
+        )
+
+        explorer_prefix_arg = options.get("explorer_prefix")
+        explorer_prefix = (
+            explorer_prefix_arg
+            if explorer_prefix_arg is not None
+            else settings.explorer_prefix
+        )
+
+        allow_execute_flag = options.get("allow_execute")
+        allow_execute = (
+            allow_execute_flag
+            if allow_execute_flag is not None
+            else settings.explorer_allow_execute
+        )
+
+        if explorer_enabled and transport in ("streamable-http", "sse"):
+            if verbosity >= 1:
+                self.stdout.write(
+                    f"[django-apcore] Tool Explorer enabled at {explorer_prefix}"
+                )
+
         # Delegate to apcore-mcp
         try:
             serve(
@@ -271,6 +326,9 @@ class Command(BaseCommand):
                 log_level=log_level,
                 tags=tags,
                 prefix=prefix,
+                explorer=explorer_enabled,
+                explorer_prefix=explorer_prefix,
+                allow_execute=allow_execute,
             )
         except ImportError as e:
             msg = (
