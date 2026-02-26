@@ -4,158 +4,204 @@ Runs within the demo's own Django environment (configured by example/conftest.py
 """
 
 import json
-from unittest.mock import MagicMock, patch
 
 import pytest
+from demo.api import _tasks
 from django.test import Client
 
-
 # ---------------------------------------------------------------------------
-# Module function unit tests (calling decorated functions directly)
+# Helpers
 # ---------------------------------------------------------------------------
 
-class TestHelloWorldModule:
-    def test_default_greeting(self):
-        from demo.apcore_modules.hello import hello_world
-
-        result = hello_world()
-        assert result == {"message": "Hello, World!"}
-
-    def test_custom_name(self):
-        from demo.apcore_modules.hello import hello_world
-
-        result = hello_world(name="Django")
-        assert result == {"message": "Hello, Django!"}
-
-
-class TestAddModule:
-    def test_add(self):
-        from demo.apcore_modules.math_tools import add
-
-        result = add(a=10, b=32)
-        assert result == {"result": 42}
+SEED_TASKS = {
+    1: {
+        "id": 1,
+        "title": "Try django-apcore",
+        "description": "Run the demo",
+        "done": False,
+    },
+    2: {
+        "id": 2,
+        "title": "Connect MCP client",
+        "description": "Use Claude Desktop",
+        "done": False,
+    },
+}
 
 
-class TestMultiplyModule:
-    def test_multiply(self):
-        from demo.apcore_modules.math_tools import multiply
+def _reset_store():
+    """Reset the in-memory task store to seed state."""
+    import demo.api as api_mod
 
-        result = multiply(a=7, b=6)
-        assert result == {"result": 42}
-
-
-class TestSlowProcessModule:
-    def test_immediate_return(self):
-        from demo.apcore_modules.slow_task import slow_process
-
-        result = slow_process(seconds=0)
-        assert result == {"message": "Completed after 0 seconds"}
+    api_mod._tasks.clear()
+    api_mod._tasks.update({k: dict(v) for k, v in SEED_TASKS.items()})
+    api_mod._next_id = 3
 
 
 # ---------------------------------------------------------------------------
-# Django view tests
+# Module function unit tests
 # ---------------------------------------------------------------------------
 
-class TestHelloView:
+
+class TestTaskStatsModule:
+    def setup_method(self):
+        _reset_store()
+
+    def test_stats_with_seed_data(self):
+        from demo.apcore_modules.task_stats import task_stats
+
+        result = task_stats()
+        assert result == {"total": 2, "done": 0, "pending": 2}
+
+    def test_stats_with_done_task(self):
+        from demo.apcore_modules.task_stats import task_stats
+
+        _tasks[1]["done"] = True
+        result = task_stats()
+        assert result == {"total": 2, "done": 1, "pending": 1}
+
+    def test_stats_empty_store(self):
+        from demo.apcore_modules.task_stats import task_stats
+
+        _tasks.clear()
+        result = task_stats()
+        assert result == {"total": 0, "done": 0, "pending": 0}
+
+
+# ---------------------------------------------------------------------------
+# django-ninja integration tests (real HTTP, no mocks)
+# ---------------------------------------------------------------------------
+
+
+class TestListTasks:
+    def setup_method(self):
+        _reset_store()
+
     @pytest.fixture()
     def client(self):
         return Client()
 
-    @patch("demo.views.executor_call")
-    def test_get_hello_default(self, mock_exec, client):
-        mock_exec.return_value = {"message": "Hello, World!"}
-        resp = client.get("/api/hello/")
+    def test_list_returns_seed_tasks(self, client):
+        resp = client.get("/api/tasks")
         assert resp.status_code == 200
         data = json.loads(resp.content)
-        assert data["message"] == "Hello, World!"
-        mock_exec.assert_called_once()
-
-    @patch("demo.views.executor_call")
-    def test_get_hello_with_name(self, mock_exec, client):
-        mock_exec.return_value = {"message": "Hello, Django!"}
-        resp = client.get("/api/hello/?name=Django")
-        assert resp.status_code == 200
-        data = json.loads(resp.content)
-        assert data["message"] == "Hello, Django!"
-
-    def test_post_not_allowed(self, client):
-        resp = client.post("/api/hello/")
-        assert resp.status_code == 405
+        assert len(data) == 2
+        assert data[0]["title"] == "Try django-apcore"
 
 
-class TestAddView:
+class TestCreateTask:
+    def setup_method(self):
+        _reset_store()
+
     @pytest.fixture()
     def client(self):
         return Client()
 
-    @patch("demo.views.executor_call")
-    def test_post_add(self, mock_exec, client):
-        mock_exec.return_value = {"result": 42}
+    def test_create_returns_201(self, client):
         resp = client.post(
-            "/api/add/",
-            data=json.dumps({"a": 10, "b": 32}),
+            "/api/tasks",
+            data=json.dumps({"title": "New task", "description": "A test"}),
             content_type="application/json",
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = json.loads(resp.content)
-        assert data["result"] == 42
+        assert data["title"] == "New task"
+        assert data["id"] == 3
+        assert data["done"] is False
 
-    def test_get_not_allowed(self, client):
-        resp = client.get("/api/add/")
-        assert resp.status_code == 405
-
-
-class TestMultiplyView:
-    @pytest.fixture()
-    def client(self):
-        return Client()
-
-    @patch("demo.views.executor_call")
-    def test_post_multiply(self, mock_exec, client):
-        mock_exec.return_value = {"result": 42}
-        resp = client.post(
-            "/api/multiply/",
-            data=json.dumps({"a": 7, "b": 6}),
+    def test_create_adds_to_store(self, client):
+        client.post(
+            "/api/tasks",
+            data=json.dumps({"title": "Another"}),
             content_type="application/json",
         )
-        assert resp.status_code == 200
-        data = json.loads(resp.content)
-        assert data["result"] == 42
+        assert len(_tasks) == 3
 
 
-class TestTaskStatusView:
+class TestGetTask:
+    def setup_method(self):
+        _reset_store()
+
     @pytest.fixture()
     def client(self):
         return Client()
 
-    @patch("demo.views.get_task_status")
-    def test_task_not_found(self, mock_status, client):
-        mock_status.return_value = None
-        resp = client.get("/api/tasks/nonexistent-id/status/")
+    def test_get_existing_task(self, client):
+        resp = client.get("/api/tasks/1")
+        assert resp.status_code == 200
+        data = json.loads(resp.content)
+        assert data["id"] == 1
+        assert data["title"] == "Try django-apcore"
+
+    def test_get_nonexistent_returns_404(self, client):
+        resp = client.get("/api/tasks/999")
         assert resp.status_code == 404
         data = json.loads(resp.content)
-        assert data["error"] == "Task not found"
+        assert data["detail"] == "not found"
 
 
-class TestListModulesView:
+class TestUpdateTask:
+    def setup_method(self):
+        _reset_store()
+
     @pytest.fixture()
     def client(self):
         return Client()
 
-    @patch("demo.views.get_registry")
-    def test_list_modules(self, mock_registry, client):
-        mock_reg = MagicMock()
-        mock_reg.count = 4
-        mock_registry.return_value = mock_reg
-        resp = client.get("/api/modules/")
+    def test_update_title(self, client):
+        resp = client.put(
+            "/api/tasks/1",
+            data=json.dumps({"title": "Updated title"}),
+            content_type="application/json",
+        )
         assert resp.status_code == 200
         data = json.loads(resp.content)
-        assert data["module_count"] == 4
+        assert data["title"] == "Updated title"
+        assert data["description"] == "Run the demo"  # unchanged
+
+    def test_mark_done(self, client):
+        resp = client.put(
+            "/api/tasks/1",
+            data=json.dumps({"done": True}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 200
+        data = json.loads(resp.content)
+        assert data["done"] is True
+
+    def test_update_nonexistent_returns_404(self, client):
+        resp = client.put(
+            "/api/tasks/999",
+            data=json.dumps({"title": "Nope"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 404
+
+
+class TestDeleteTask:
+    def setup_method(self):
+        _reset_store()
+
+    @pytest.fixture()
+    def client(self):
+        return Client()
+
+    def test_delete_existing_task(self, client):
+        resp = client.delete("/api/tasks/1")
+        assert resp.status_code == 200
+        data = json.loads(resp.content)
+        assert data["deleted"] is True
+        assert 1 not in _tasks
+
+    def test_delete_nonexistent_returns_404(self, client):
+        resp = client.delete("/api/tasks/999")
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
 # Module discovery test
 # ---------------------------------------------------------------------------
+
 
 class TestModuleDiscovery:
     def test_apcore_modules_importable(self):
@@ -163,7 +209,7 @@ class TestModuleDiscovery:
 
         assert mod is not None
 
-    def test_four_decorated_functions(self):
+    def test_one_decorated_function(self):
         import demo.apcore_modules as mod
 
         decorated = [
@@ -172,5 +218,5 @@ class TestModuleDiscovery:
             if callable(getattr(mod, name))
             and hasattr(getattr(mod, name), "apcore_module")
         ]
-        assert len(decorated) == 4
-        assert set(decorated) == {"hello_world", "add", "multiply", "slow_process"}
+        assert len(decorated) == 1
+        assert set(decorated) == {"task_stats"}

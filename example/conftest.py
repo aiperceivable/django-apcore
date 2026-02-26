@@ -27,5 +27,6 @@ def pytest_configure():
         DEFAULT_AUTO_FIELD="django.db.models.BigAutoField",
         ROOT_URLCONF="demo.urls",
         SECRET_KEY="test-secret",
+        APCORE_SERVER_NAME="task-manager-mcp",
     )
     django.setup()
