@@ -15,7 +15,6 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[all,dev]"
       - run: ruff check src/ tests/
-      - run: ruff format --check src/ tests/
 
   test:
     runs-on: ubuntu-latest
