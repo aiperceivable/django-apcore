@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-apcore"
-version = "0.1.0"
+version = "0.1.1"
 description = "Django integration for apcore — scan existing REST APIs and serve them as MCP tools for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -74,3 +74,9 @@ norecursedirs = ["example"]
 [tool.apdev]
 base_package = "django_apcore"
 src_dir = "src"
+
+[project.urls]
+Homepage = "https://github.com/aipartnerup/"
+Repository = "https://github.com/aipartnerup/django-apcore"
+Documentation = "https://github.com/aipartnerup/django-apcore#readme"
+Issues = "https://github.com/aipartnerup/django-apcore/issues"
