@@ -251,7 +251,8 @@ class TestServeCommandExplorer:
             out = StringIO()
             call_command(
                 "apcore_serve",
-                "--transport", "streamable-http",
+                "--transport",
+                "streamable-http",
                 "--explorer",
                 stdout=out,
             )

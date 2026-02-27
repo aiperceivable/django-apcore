@@ -96,6 +96,7 @@ class NinjaScanner(BaseScanner):
             # OpenAPI paths already contain the full route (e.g. /api/tasks),
             # so we don't need urls_namespace as an additional prefix.
             api_prefix = ""
+            func_map = self._build_view_func_map(api)
             try:
                 schema = api.get_openapi_schema()
                 paths = schema.get("paths", {})
@@ -110,7 +111,13 @@ class NinjaScanner(BaseScanner):
                             "delete",
                         ):
                             module = self._operation_to_module(
-                                api, api_prefix, path, method, operation
+                                api,
+                                api_prefix,
+                                path,
+                                method,
+                                operation,
+                                func_map,
+                                schema,
                             )
                             if module:
                                 modules.append(module)
@@ -139,6 +146,31 @@ class NinjaScanner(BaseScanner):
 
         return modules
 
+    def _build_view_func_map(self, api: Any) -> dict[str, tuple[str, str]]:
+        """Build a mapping from operationId to (module_path, func_name).
+
+        Traverses NinjaAPI's internal routing structures to find the actual
+        view function for each operation, so that the generated ``target``
+        field uses the correct Python module and function name.
+        """
+        func_map: dict[str, tuple[str, str]] = {}
+        try:
+            for _prefix, router in api._routers:
+                for path_view in router.path_operations.values():
+                    for op in path_view.operations:
+                        func = op.view_func
+                        if func is None:
+                            continue
+                        op_id = getattr(op, "operation_id", None)
+                        if op_id:
+                            func_map[op_id] = (func.__module__, func.__name__)
+        except Exception:
+            logger.debug(
+                "Could not build view function map from NinjaAPI internals",
+                exc_info=True,
+            )
+        return func_map
+
     def _operation_to_module(
         self,
         api: Any,
@@ -146,11 +178,20 @@ class NinjaScanner(BaseScanner):
         path: str,
         method: str,
         operation: dict[str, Any],
+        func_map: dict[str, tuple[str, str]],
+        openapi_doc: dict[str, Any] | None = None,
     ) -> ScannedModule | None:
         """Convert an OpenAPI operation to a ScannedModule."""
         try:
-            module_id = self._generate_module_id(api_prefix, path, method)
-            operation_id = operation.get("operationId", module_id)
+            operation_id = operation.get("operationId")
+            module_id = self._generate_module_id(
+                api_prefix,
+                path,
+                method,
+                operation_id,
+            )
+            if not operation_id:
+                operation_id = module_id
 
             description = self._extract_description(
                 description=operation.get("description"),
@@ -158,11 +199,17 @@ class NinjaScanner(BaseScanner):
                 operation_id=operation_id,
             )
 
-            input_schema = self._extract_input_schema(operation)
-            output_schema = self._extract_output_schema(operation)
+            input_schema = self._extract_input_schema(operation, openapi_doc)
+            output_schema = self._extract_output_schema(operation, openapi_doc)
 
             tags = operation.get("tags", [])
-            target = f"{api.__module__}:{operation_id}"
+
+            # Resolve target from actual view function when available
+            func_info = func_map.get(operation_id)
+            if func_info:
+                target = f"{func_info[0]}:{func_info[1]}"
+            else:
+                target = f"{api.__module__}:{operation_id}"
 
             warnings: list[str] = []
             if not operation.get("description") and not operation.get("summary"):
@@ -188,11 +235,22 @@ class NinjaScanner(BaseScanner):
             )
             return None
 
-    def _generate_module_id(self, api_prefix: str, path: str, method: str) -> str:
+    def _generate_module_id(
+        self,
+        api_prefix: str,
+        path: str,
+        method: str,
+        operation_id: str | None = None,
+    ) -> str:
         """Generate module ID per BL-001.
 
-        Format: {api_prefix}.{path_segments}.{method} lowercased,
+        Format: {api_prefix}.{path_segments}.{action} lowercased,
         special chars replaced.
+
+        When *operation_id* is available (e.g. ``list_tasks``), the action
+        verb is extracted from it (``list``) instead of the raw HTTP method,
+        producing more semantic IDs like ``api.tasks.list`` instead of
+        ``api.tasks.get``.
         """
         # Clean prefix and path
         combined = f"{api_prefix}/{path}".strip("/")
@@ -202,8 +260,14 @@ class NinjaScanner(BaseScanner):
         combined = re.sub(r"[^a-zA-Z0-9]+", ".", combined)
         # Remove trailing/leading dots
         combined = combined.strip(".")
-        # Append method
-        module_id = f"{combined}.{method}".lower()
+        # Derive action: prefer first segment of operationId over HTTP method
+        action = method
+        if operation_id:
+            parts = operation_id.split("_")
+            if parts[0]:
+                action = parts[0]
+        # Append action
+        module_id = f"{combined}.{action}".lower()
         # Clean up double dots
         module_id = re.sub(r"\.+", ".", module_id)
         return module_id

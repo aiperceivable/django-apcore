@@ -111,7 +111,34 @@ class BaseScanner(ABC):
                 result.append(id_)
         return result
 
-    def _extract_input_schema(self, operation: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _resolve_ref(ref_string: str, openapi_doc: dict[str, Any]) -> dict[str, Any]:
+        """Resolve a JSON $ref pointer like '#/components/schemas/Foo'."""
+        if not ref_string.startswith("#/"):
+            return {}
+        parts = ref_string[2:].split("/")
+        current: Any = openapi_doc
+        for part in parts:
+            if not isinstance(current, dict):
+                return {}
+            current = current.get(part, {})
+        return current if isinstance(current, dict) else {}
+
+    @staticmethod
+    def _resolve_schema(
+        schema: dict[str, Any],
+        openapi_doc: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """If schema is a $ref, resolve it; otherwise return as-is."""
+        if openapi_doc and "$ref" in schema:
+            return BaseScanner._resolve_ref(schema["$ref"], openapi_doc)
+        return schema
+
+    def _extract_input_schema(
+        self,
+        operation: dict[str, Any],
+        openapi_doc: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Extract input schema from an OpenAPI operation."""
         schema: dict[str, Any] = {
             "type": "object",
@@ -124,6 +151,7 @@ class BaseScanner(ABC):
             if param.get("in") in ("query", "path"):
                 name = param["name"]
                 param_schema = param.get("schema", {"type": "string"})
+                param_schema = self._resolve_schema(param_schema, openapi_doc)
                 schema["properties"][name] = param_schema
                 if param.get("required", False):
                     schema["required"].append(name)
@@ -134,12 +162,17 @@ class BaseScanner(ABC):
         json_content = content.get("application/json", {})
         body_schema = json_content.get("schema", {})
         if body_schema:
+            body_schema = self._resolve_schema(body_schema, openapi_doc)
             schema["properties"].update(body_schema.get("properties", {}))
             schema["required"].extend(body_schema.get("required", []))
 
         return schema
 
-    def _extract_output_schema(self, operation: dict[str, Any]) -> dict[str, Any]:
+    def _extract_output_schema(
+        self,
+        operation: dict[str, Any],
+        openapi_doc: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Extract output schema from OpenAPI operation responses (200/201)."""
         responses = operation.get("responses", {})
         for status_code in ("200", "201"):
@@ -147,6 +180,14 @@ class BaseScanner(ABC):
             content = response.get("content", {})
             json_content = content.get("application/json", {})
             if "schema" in json_content:
-                return json_content["schema"]
+                schema = json_content["schema"]
+                schema = self._resolve_schema(schema, openapi_doc)
+                # Handle array with $ref items
+                if schema.get("type") == "array" and "$ref" in schema.get("items", {}):
+                    schema["items"] = self._resolve_schema(
+                        schema["items"],
+                        openapi_doc,
+                    )
+                return schema
 
         return {"type": "object", "properties": {}}

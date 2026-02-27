@@ -3,19 +3,25 @@
 # Schemas manually corrected (scanner $ref resolution pending).
 
 bindings:
-- module_id: api.tasks.get
-  target: demo.api:get_task
-  description: Get a task by its ID.
+- module_id: api.tasks.create
+  target: demo.api:create_task
+  description: Create a new task.
   tags: []
   version: 1.0.0
   input_schema:
     type: object
     properties:
-      task_id:
-        title: Task Id
-        type: integer
+      title:
+        title: Title
+        type: string
+      description:
+        title: Description
+        type: string
+      done:
+        title: Done
+        type: boolean
     required:
-    - task_id
+    - title
   output_schema:
     type: object
     properties:

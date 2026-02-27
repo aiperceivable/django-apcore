@@ -85,10 +85,10 @@ The demo ships with 2 seed tasks (id 1 and 2). Use these example inputs in the e
 | Module | Example input |
 |---|---|
 | `task_stats.v1` | *(no input required)* |
-| `api.tasks.get` | *(no input required)* |
-| `api.tasks.get_2` | `{"task_id": 1}` |
-| `api.tasks.post` | `{"title": "Buy milk", "description": "From the store", "done": false}` |
-| `api.tasks.put` | `{"task_id": 1, "title": "Try django-apcore (done!)", "done": true}` |
+| `api.tasks.list` | *(no input required)* |
+| `api.tasks.get` | `{"task_id": 1}` |
+| `api.tasks.create` | `{"title": "Buy milk", "description": "From the store", "done": false}` |
+| `api.tasks.update` | `{"task_id": 1, "title": "Try django-apcore (done!)", "done": true}` |
 | `api.tasks.delete` | `{"task_id": 2}` |
 
 ## Docker
@@ -120,6 +120,8 @@ python -m pytest tests/ -v
 ## Features Demonstrated
 
 - **Route scanning** — `apcore_scan --source ninja` discovers all 5 CRUD routes
+- **Semantic module IDs** — action verbs from function names (`list`, `get`, `create`, `update`, `delete`) instead of HTTP methods
+- **`$ref` resolution** — Pydantic model schemas resolved from OpenAPI `$ref` references
 - **Annotation inference** — GET→readonly, DELETE→destructive, PUT→idempotent
 - **Pydantic schemas** — Input validation from `TaskCreate` and `TaskUpdate` models
 - **@module decorator** — `task_stats.v1` registered alongside scanned routes
@@ -144,7 +146,8 @@ example/
 │   ├── api.py              # Task Manager CRUD with Pydantic schemas
 │   └── apcore_modules/
 │       ├── __init__.py     # Re-exports for auto-discovery
-│       └── task_stats.py   # @module "task_stats.v1"
+│       ├── task_stats.py   # @module "task_stats.v1"
+│       └── *.binding.yaml  # Auto-generated YAML bindings for scanned routes
 └── tests/
     └── test_demo.py        # Unit + integration tests
 ```

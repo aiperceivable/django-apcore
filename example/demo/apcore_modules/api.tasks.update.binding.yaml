@@ -3,9 +3,9 @@
 # Schemas manually corrected (scanner $ref resolution pending).
 
 bindings:
-- module_id: api.tasks.delete
-  target: demo.api:delete_task
-  description: Delete a task permanently.
+- module_id: api.tasks.update
+  target: demo.api:update_task
+  description: Update an existing task.
   tags: []
   version: 1.0.0
   input_schema:
@@ -14,10 +14,25 @@ bindings:
       task_id:
         title: Task Id
         type: integer
+      title:
+        title: Title
+        type: string
+      description:
+        title: Description
+        type: string
+      done:
+        title: Done
+        type: boolean
     required:
     - task_id
   output_schema:
     type: object
     properties:
-      deleted:
+      id:
+        type: integer
+      title:
+        type: string
+      description:
+        type: string
+      done:
         type: boolean

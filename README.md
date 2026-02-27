@@ -12,6 +12,8 @@ The core philosophy is **scan, don't rewrite**: instead of manually defining MCP
 
 - **Auto-scan DRF endpoints** via drf-spectacular OpenAPI generation
 - **Auto-scan django-ninja endpoints** via built-in OpenAPI schema extraction
+- **Auto-resolve `$ref`** — Pydantic model schemas resolved from OpenAPI `$ref` references
+- **Semantic module IDs** — action verbs from function names (`list`, `get`, `create`) instead of raw HTTP methods
 - **Generate YAML binding files** or **Python `@module` wrappers** from scanned endpoints
 - **Serve as MCP tools** via apcore-mcp (stdio / streamable-http / SSE transports)
 - **Pluggable middleware pipeline** — logging, tracing, metrics, and custom middleware
@@ -134,7 +136,7 @@ pip install django-apcore[mcp]
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `django` | `>= 4.2` | Core framework |
-| `apcore` | `>= 0.4.0, < 0.5.0` | Protocol SDK |
+| `apcore` | `>= 0.6.0` | Protocol SDK |
 | `pydantic` | `>= 2.0` | Schema validation |
 | `pyyaml` | `>= 6.0` | YAML binding files |
 
@@ -144,7 +146,7 @@ pip install django-apcore[mcp]
 |-------|---------|---------|---------|
 | `ninja` | `django-ninja` | `>= 1.0` | django-ninja endpoint scanning |
 | `drf` | `drf-spectacular` | `>= 0.27` | DRF endpoint scanning via OpenAPI |
-| `mcp` | `apcore-mcp` | `>= 0.5.1` | MCP server and transport layer |
+| `mcp` | `apcore-mcp` | `>= 0.6.0` | MCP server and transport layer |
 
 ## Configuration
 
@@ -401,7 +403,7 @@ Ask the MCP client for user input via elicitation. Returns `None` when apcore-mc
 
 ## Demo Project
 
-The `example/` directory contains a self-contained demo showcasing django-apcore's core features: `@module` decorator, `executor_call()` shortcuts, MCP server, and async tasks.
+The `example/` directory contains a Task Manager API demo showcasing django-apcore's core features: django-ninja route scanning, `@module` decorator, MCP server with Tool Explorer, and observability.
 
 ### Run with Docker
 
@@ -414,58 +416,51 @@ This starts two services:
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| `web` | http://localhost:8000 | Django API server |
+| `web` | http://localhost:8000 | Django API server (django-ninja) |
 | `mcp` | http://localhost:9090 | MCP server (`apcore_serve`, streamable-http) |
 
 ### Registered Modules
 
-| Module ID | Function | Description |
-|-----------|----------|-------------|
-| `hello` | `hello_world(name)` | Greet someone by name |
-| `math.add` | `add(a, b)` | Add two numbers |
-| `math.multiply` | `multiply(a, b)` | Multiply two numbers |
-| `slow.process` | `slow_process(seconds)` | Simulate a long-running task |
+| Module ID | Target | Description |
+|-----------|--------|-------------|
+| `task_stats.v1` | `task_stats()` | Return summary statistics about all tasks |
+| `api.tasks.list` | `list_tasks()` | List all tasks |
+| `api.tasks.get` | `get_task(task_id)` | Get a task by its ID |
+| `api.tasks.create` | `create_task(body)` | Create a new task |
+| `api.tasks.update` | `update_task(task_id, body)` | Update an existing task |
+| `api.tasks.delete` | `delete_task(task_id)` | Delete a task permanently |
 
 ### API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/hello/` | Call the hello module |
-| POST | `/api/add/` | Add two numbers |
-| POST | `/api/multiply/` | Multiply two numbers |
-| POST | `/api/tasks/submit/` | Submit an async task |
-| GET | `/api/tasks/<task_id>/status/` | Poll task status |
-| GET | `/api/modules/` | List registered module count |
+| GET | `/api/tasks` | List all tasks |
+| POST | `/api/tasks` | Create a new task |
+| GET | `/api/tasks/{task_id}` | Get a task by ID |
+| PUT | `/api/tasks/{task_id}` | Update a task |
+| DELETE | `/api/tasks/{task_id}` | Delete a task |
 
 ### Try It
 
 ```bash
-# Hello (default)
-curl http://localhost:8000/api/hello/
+# List tasks
+curl http://localhost:8000/api/tasks
 
-# Hello with name
-curl http://localhost:8000/api/hello/?name=Django
-
-# Add
-curl -X POST http://localhost:8000/api/add/ \
+# Create a task
+curl -X POST http://localhost:8000/api/tasks \
   -H 'Content-Type: application/json' \
-  -d '{"a": 10, "b": 32}'
+  -d '{"title": "Buy milk", "description": "From the store"}'
 
-# Multiply
-curl -X POST http://localhost:8000/api/multiply/ \
+# Get a task by ID
+curl http://localhost:8000/api/tasks/1
+
+# Update a task
+curl -X PUT http://localhost:8000/api/tasks/1 \
   -H 'Content-Type: application/json' \
-  -d '{"a": 7, "b": 6}'
+  -d '{"done": true}'
 
-# Submit async task
-curl -X POST http://localhost:8000/api/tasks/submit/ \
-  -H 'Content-Type: application/json' \
-  -d '{"module_id": "slow.process", "inputs": {"seconds": 3}}'
-
-# Poll task status (replace <task_id>)
-curl http://localhost:8000/api/tasks/<task_id>/status/
-
-# List modules
-curl http://localhost:8000/api/modules/
+# Delete a task
+curl -X DELETE http://localhost:8000/api/tasks/2
 ```
 
 ### Connect an AI Agent
@@ -478,17 +473,19 @@ The MCP server on port 9090 uses the `streamable-http` transport. Point any MCP-
 example/
 ├── Dockerfile              # Python 3.11 image with django-apcore
 ├── docker-compose.yml      # web + mcp services
+├── entrypoint.sh           # scan → serve pipeline
 ├── manage.py
+├── conftest.py             # pytest-django configuration
 ├── demo/
 │   ├── settings.py         # Django settings with apcore config
-│   ├── urls.py             # API route definitions
-│   ├── views.py            # Views using executor_call() and submit_task()
+│   ├── urls.py             # API route (django-ninja)
+│   ├── api.py              # Task Manager CRUD with Pydantic schemas
 │   └── apcore_modules/
 │       ├── __init__.py     # Re-exports for auto-discovery
-│       ├── hello.py        # @module "hello"
-│       ├── math_tools.py   # @module "math.add", "math.multiply"
-│       └── slow_task.py    # @module "slow.process"
-└── README.md
+│       ├── task_stats.py   # @module "task_stats.v1"
+│       └── *.binding.yaml  # Auto-generated YAML bindings for scanned routes
+└── tests/
+    └── test_demo.py        # Unit + integration tests
 ```
 
 ## Requirements

@@ -33,6 +33,7 @@ DATABASES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # apcore settings
+APCORE_MODULE_DIR = str(BASE_DIR / "demo" / "apcore_modules")
 APCORE_SERVE_TRANSPORT = "streamable-http"
 APCORE_SERVE_HOST = "0.0.0.0"
 APCORE_SERVE_PORT = 9090

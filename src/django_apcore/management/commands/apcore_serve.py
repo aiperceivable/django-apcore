@@ -285,9 +285,7 @@ class Command(BaseCommand):
         # Resolve explorer settings
         explorer_flag = options.get("explorer")
         explorer_enabled = (
-            explorer_flag
-            if explorer_flag is not None
-            else settings.explorer_enabled
+            explorer_flag if explorer_flag is not None else settings.explorer_enabled
         )
 
         explorer_prefix_arg = options.get("explorer_prefix")
@@ -304,11 +302,14 @@ class Command(BaseCommand):
             else settings.explorer_allow_execute
         )
 
-        if explorer_enabled and transport in ("streamable-http", "sse"):
-            if verbosity >= 1:
-                self.stdout.write(
-                    f"[django-apcore] Tool Explorer enabled at {explorer_prefix}"
-                )
+        if (
+            explorer_enabled
+            and transport in ("streamable-http", "sse")
+            and verbosity >= 1
+        ):
+            self.stdout.write(
+                f"[django-apcore] Tool Explorer enabled at {explorer_prefix}"
+            )
 
         # Delegate to apcore-mcp
         try:

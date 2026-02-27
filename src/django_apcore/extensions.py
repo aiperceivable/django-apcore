@@ -7,8 +7,11 @@ from Django settings.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
+import inspect
 import logging
+import typing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -58,7 +61,7 @@ class DjangoDiscoverer:
         """Load YAML binding files from the module directory."""
         results: list[dict[str, Any]] = []
         try:
-            from apcore import BindingLoader, Registry
+            from apcore import BindingLoader, FunctionModule, Registry
 
             temp_registry = Registry()
             loader = BindingLoader()
@@ -69,6 +72,7 @@ class DjangoDiscoverer:
             )
             if modules:
                 for fm in modules:
+                    fm = self._adapt_view_module(fm, FunctionModule)
                     results.append({"module_id": fm.module_id, "module": fm})
             logger.info(
                 "Discovered %d binding modules from %s",
@@ -80,6 +84,90 @@ class DjangoDiscoverer:
         except Exception:
             logger.exception("Error loading binding files from %s", module_dir)
         return results
+
+    @staticmethod
+    def _adapt_view_module(fm: Any, function_module_cls: type) -> Any:
+        """Wrap a Django view function so it can be called via MCP.
+
+        Django view functions (django-ninja, DRF) expect a ``request`` object
+        as their first parameter plus typed body/path parameters.  MCP calls
+        pass flat keyword arguments.  This method detects view functions and
+        creates a thin wrapper that:
+
+        1. Supplies a dummy ``HttpRequest`` for the ``request`` parameter.
+        2. Collects kwargs that belong to a Pydantic body model and
+           reconstructs it.
+        3. Passes remaining kwargs as path/query parameters.
+        4. Unwraps ``(status_code, data)`` tuple returns used by django-ninja.
+        """
+        func = fm._func  # noqa: SLF001
+        sig = inspect.signature(func)
+        params = list(sig.parameters.keys())
+
+        # Only adapt functions whose first parameter is 'request'
+        if not params or params[0] != "request":
+            return fm
+
+        # Resolve type hints to find Pydantic body parameters
+        hints: dict[str, Any] = {}
+        with contextlib.suppress(Exception):
+            hints = typing.get_type_hints(func)
+
+        from pydantic import BaseModel
+
+        body_param_name: str | None = None
+        body_model_cls: type[BaseModel] | None = None
+        for name in params[1:]:
+            hint = hints.get(name)
+            if (
+                hint is not None
+                and isinstance(hint, type)
+                and issubclass(hint, BaseModel)
+            ):
+                body_param_name = name
+                body_model_cls = hint
+                break
+
+        # Capture in closure-safe locals
+        orig_func = func
+        bpn = body_param_name
+        bmc = body_model_cls
+
+        def adapted(**kwargs: Any) -> Any:
+            from django.test import RequestFactory
+
+            request = RequestFactory().get("/")
+
+            call_kwargs: dict[str, Any] = {}
+            if bmc is not None and bpn is not None:
+                body_fields = set(bmc.model_fields.keys())
+                body_data = {k: v for k, v in kwargs.items() if k in body_fields}
+                non_body = {k: v for k, v in kwargs.items() if k not in body_fields}
+                call_kwargs[bpn] = bmc(**body_data)
+                call_kwargs.update(non_body)
+            else:
+                call_kwargs = dict(kwargs)
+
+            result = orig_func(request, **call_kwargs)
+            # django-ninja views may return (status_code, data) tuples
+            if isinstance(result, tuple) and len(result) == 2:
+                return result[1]
+            return result
+
+        adapted.__name__ = func.__name__
+        adapted.__module__ = func.__module__
+        adapted.__doc__ = func.__doc__
+        adapted.__annotations__ = {"return": dict}
+
+        return function_module_cls(
+            func=adapted,
+            module_id=fm.module_id,
+            description=fm.description,
+            tags=fm.tags,
+            version=fm.version,
+            input_schema=fm.input_schema,
+            output_schema=fm.output_schema,
+        )
 
     def _scan_installed_apps(self) -> list[dict[str, Any]]:
         """Scan INSTALLED_APPS for apcore_modules submodules."""

@@ -38,12 +38,11 @@ class TestNinjaScanner:
             result = scanner.scan()
             assert result == []
 
-    def test_module_id_generation(self):
-        """Module ID follows BL-001: {api_prefix}.{path_segments}.{method}."""
+    def test_module_id_generation_fallback_to_method(self):
+        """Without operationId, module ID uses HTTP method as action."""
         from django_apcore.scanners.ninja import NinjaScanner
 
         scanner = NinjaScanner()
-        # Test the ID generation utility
         module_id = scanner._generate_module_id(
             api_prefix="/api/v1",
             path="/users/{id}",
@@ -51,8 +50,59 @@ class TestNinjaScanner:
         )
         assert module_id == "api.v1.users.get"
 
+    def test_module_id_uses_operation_id_action(self):
+        """With operationId, module ID uses the action verb from it."""
+        from django_apcore.scanners.ninja import NinjaScanner
+
+        scanner = NinjaScanner()
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks",
+                "GET",
+                "list_tasks",
+            )
+            == "api.tasks.list"
+        )
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks/{task_id}",
+                "GET",
+                "get_task",
+            )
+            == "api.tasks.get"
+        )
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks",
+                "POST",
+                "create_task",
+            )
+            == "api.tasks.create"
+        )
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks/{task_id}",
+                "PUT",
+                "update_task",
+            )
+            == "api.tasks.update"
+        )
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks/{task_id}",
+                "DELETE",
+                "delete_task",
+            )
+            == "api.tasks.delete"
+        )
+
     def test_module_id_special_chars_replaced(self):
-        """Special characters in paths are replaced with underscores."""
+        """Special characters in paths are replaced with dots."""
         from django_apcore.scanners.ninja import NinjaScanner
 
         scanner = NinjaScanner()
@@ -169,6 +219,81 @@ class TestNinjaScanner:
         scanner = NinjaScanner()
         ids = scanner._deduplicate_ids(["users.list", "users.list", "users.list"])
         assert ids == ["users.list", "users.list_2", "users.list_3"]
+
+
+class TestNinjaRefResolution:
+    """Test that NinjaScanner resolves $ref in schemas."""
+
+    def test_operation_to_module_resolves_ref(self):
+        """Full operation with $ref produces correct input/output schema."""
+        from unittest.mock import MagicMock
+
+        from django_apcore.scanners.ninja import NinjaScanner
+
+        scanner = NinjaScanner()
+        api = MagicMock()
+        api.__module__ = "test_module"
+
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "TaskCreate": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "done": {"type": "boolean"},
+                        },
+                        "required": ["title"],
+                    },
+                    "TaskOut": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "title": {"type": "string"},
+                        },
+                    },
+                }
+            }
+        }
+        operation = {
+            "operationId": "create_task",
+            "description": "Create a task",
+            "tags": ["tasks"],
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/TaskCreate"}
+                    }
+                }
+            },
+            "responses": {
+                "201": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/TaskOut"}
+                        }
+                    }
+                }
+            },
+        }
+
+        module = scanner._operation_to_module(
+            api,
+            "",
+            "/api/tasks",
+            "post",
+            operation,
+            {},
+            openapi_doc,
+        )
+
+        assert module is not None
+        assert module.module_id == "api.tasks.create"
+        assert "title" in module.input_schema["properties"]
+        assert "done" in module.input_schema["properties"]
+        assert "title" in module.input_schema["required"]
+        assert "id" in module.output_schema["properties"]
+        assert "title" in module.output_schema["properties"]
 
 
 class TestNinjaImportGuard:

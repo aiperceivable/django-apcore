@@ -239,3 +239,177 @@ class TestFilterModules:
         scanner = self._make_scanner()
         result = scanner.scan(include=r"nonexistent")
         assert len(result) == 0
+
+
+class TestResolveRef:
+    """Test $ref resolution helpers on BaseScanner."""
+
+    def _make_scanner(self):
+        from django_apcore.scanners.base import BaseScanner
+
+        class ConcreteScanner(BaseScanner):
+            def scan(self, include=None, exclude=None):
+                return []
+
+            def get_source_name(self) -> str:
+                return "test"
+
+        return ConcreteScanner()
+
+    def test_resolve_ref_simple(self):
+        """Resolves #/components/schemas/Foo to the correct dict."""
+        from django_apcore.scanners.base import BaseScanner
+
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "Foo": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                        "required": ["name"],
+                    }
+                }
+            }
+        }
+        result = BaseScanner._resolve_ref("#/components/schemas/Foo", openapi_doc)
+        assert result == openapi_doc["components"]["schemas"]["Foo"]
+        assert "name" in result["properties"]
+
+    def test_resolve_ref_missing(self):
+        """Returns {} for a broken ref path."""
+        from django_apcore.scanners.base import BaseScanner
+
+        openapi_doc = {"components": {"schemas": {}}}
+        result = BaseScanner._resolve_ref("#/components/schemas/Missing", openapi_doc)
+        assert result == {}
+
+    def test_resolve_ref_non_local(self):
+        """Returns {} for an external (non-local) ref."""
+        from django_apcore.scanners.base import BaseScanner
+
+        result = BaseScanner._resolve_ref(
+            "https://example.com/schema.json", {"components": {}}
+        )
+        assert result == {}
+
+    def test_resolve_schema_with_ref(self):
+        """_resolve_schema resolves a $ref schema."""
+        from django_apcore.scanners.base import BaseScanner
+
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "Bar": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    }
+                }
+            }
+        }
+        schema = {"$ref": "#/components/schemas/Bar"}
+        result = BaseScanner._resolve_schema(schema, openapi_doc)
+        assert result["type"] == "object"
+        assert "id" in result["properties"]
+
+    def test_resolve_schema_without_ref(self):
+        """_resolve_schema returns the schema as-is when no $ref."""
+        from django_apcore.scanners.base import BaseScanner
+
+        schema = {"type": "object", "properties": {"x": {"type": "string"}}}
+        result = BaseScanner._resolve_schema(schema, None)
+        assert result is schema
+
+    def test_extract_input_schema_with_ref(self):
+        """requestBody with $ref is resolved to actual properties."""
+        scanner = self._make_scanner()
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "TaskCreate": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "done": {"type": "boolean"},
+                        },
+                        "required": ["title"],
+                    }
+                }
+            }
+        }
+        operation = {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/TaskCreate"}
+                    }
+                }
+            }
+        }
+        result = scanner._extract_input_schema(operation, openapi_doc)
+        assert "title" in result["properties"]
+        assert "done" in result["properties"]
+        assert "title" in result["required"]
+
+    def test_extract_output_schema_with_ref(self):
+        """Response schema with $ref is resolved to actual properties."""
+        scanner = self._make_scanner()
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "TaskOut": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "title": {"type": "string"},
+                        },
+                    }
+                }
+            }
+        }
+        operation = {
+            "responses": {
+                "200": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/TaskOut"}
+                        }
+                    }
+                }
+            }
+        }
+        result = scanner._extract_output_schema(operation, openapi_doc)
+        assert result["type"] == "object"
+        assert "id" in result["properties"]
+        assert "title" in result["properties"]
+
+    def test_extract_output_schema_array_with_ref_items(self):
+        """Array response with $ref items is resolved."""
+        scanner = self._make_scanner()
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "TaskOut": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    }
+                }
+            }
+        }
+        operation = {
+            "responses": {
+                "200": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/TaskOut"},
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        result = scanner._extract_output_schema(operation, openapi_doc)
+        assert result["type"] == "array"
+        assert result["items"]["type"] == "object"
+        assert "id" in result["items"]["properties"]

@@ -76,7 +76,7 @@ class DRFScanner(BaseScanner):
                 if method.lower() not in ("get", "post", "put", "patch", "delete"):
                     continue
 
-                module = self._operation_to_module(path, method, operation)
+                module = self._operation_to_module(path, method, operation, schema)
                 if module:
                     modules.append(module)
 
@@ -103,7 +103,11 @@ class DRFScanner(BaseScanner):
         return modules
 
     def _operation_to_module(
-        self, path: str, method: str, operation: dict[str, Any]
+        self,
+        path: str,
+        method: str,
+        operation: dict[str, Any],
+        openapi_doc: dict[str, Any] | None = None,
     ) -> ScannedModule | None:
         """Convert a single OpenAPI operation to a ScannedModule."""
         try:
@@ -116,8 +120,8 @@ class DRFScanner(BaseScanner):
                 operation_id=operation_id or module_id,
             )
 
-            input_schema = self._extract_input_schema(operation)
-            output_schema = self._extract_output_schema(operation)
+            input_schema = self._extract_input_schema(operation, openapi_doc)
+            output_schema = self._extract_output_schema(operation, openapi_doc)
             tags = operation.get("tags", [])
 
             # Target must be in "module.path:callable" format for PythonWriter
