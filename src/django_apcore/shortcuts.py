@@ -44,7 +44,10 @@ async def elicit(
     try:
         from apcore_mcp import elicit as _elicit
 
-        return await _elicit(context, message, requested_schema=requested_schema)
+        result: dict[str, Any] | None = await _elicit(
+            context, message, requested_schema=requested_schema
+        )
+        return result
     except ImportError:
         return None
 
@@ -55,7 +58,7 @@ def executor_call(
     *,
     request: Any = None,
     context: Any = None,
-) -> dict:
+) -> dict[str, Any]:
     """Execute an apcore module synchronously.
 
     Args:
@@ -73,7 +76,8 @@ def executor_call(
     executor = get_executor()
     if context is None and request is not None:
         context = get_context_factory().create_context(request)
-    return executor.call(module_id, inputs or {}, context=context)
+    result: dict[str, Any] = executor.call(module_id, inputs or {}, context=context)
+    return result
 
 
 async def executor_call_async(
@@ -82,7 +86,7 @@ async def executor_call_async(
     *,
     request: Any = None,
     context: Any = None,
-) -> dict:
+) -> dict[str, Any]:
     """Execute an apcore module asynchronously.
 
     Args:
@@ -100,7 +104,10 @@ async def executor_call_async(
     executor = get_executor()
     if context is None and request is not None:
         context = get_context_factory().create_context(request)
-    return await executor.call_async(module_id, inputs or {}, context=context)
+    result: dict[str, Any] = await executor.call_async(
+        module_id, inputs or {}, context=context
+    )
+    return result
 
 
 async def executor_stream(
@@ -138,7 +145,7 @@ def cancellable_call(
     request: Any = None,
     context: Any = None,
     timeout: float | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Execute an apcore module with CancelToken.
 
     Creates a CancelToken and attaches it to the context.
@@ -181,11 +188,15 @@ def cancellable_call(
         timer = threading.Timer(timeout, token.cancel)
         timer.start()
         try:
-            return executor.call(module_id, inputs or {}, context=context)
+            result: dict[str, Any] = executor.call(
+                module_id, inputs or {}, context=context
+            )
+            return result
         finally:
             timer.cancel()
 
-    return executor.call(module_id, inputs or {}, context=context)
+    result = executor.call(module_id, inputs or {}, context=context)
+    return result
 
 
 async def cancellable_call_async(
@@ -195,7 +206,7 @@ async def cancellable_call_async(
     request: Any = None,
     context: Any = None,
     timeout: float | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Execute an apcore module asynchronously with CancelToken.
 
     Creates a CancelToken and attaches it to the context.
@@ -243,11 +254,15 @@ async def cancellable_call_async(
 
         cancel_task = asyncio.create_task(_cancel_after_timeout())
         try:
-            return await executor.call_async(module_id, inputs or {}, context=context)
+            result: dict[str, Any] = await executor.call_async(
+                module_id, inputs or {}, context=context
+            )
+            return result
         finally:
             cancel_task.cancel()
 
-    return await executor.call_async(module_id, inputs or {}, context=context)
+    result = await executor.call_async(module_id, inputs or {}, context=context)
+    return result
 
 
 async def submit_task(
@@ -269,7 +284,8 @@ async def submit_task(
     from django_apcore.tasks import get_task_manager
 
     tm = get_task_manager()
-    return await tm.submit(module_id, inputs or {}, context=context)
+    task_id: str = await tm.submit(module_id, inputs or {}, context=context)
+    return task_id
 
 
 def get_task_status(task_id: str) -> Any:
@@ -297,4 +313,5 @@ async def cancel_task(task_id: str) -> bool:
     """
     from django_apcore.tasks import get_task_manager
 
-    return await get_task_manager().cancel(task_id)
+    cancelled: bool = await get_task_manager().cancel(task_id)
+    return cancelled

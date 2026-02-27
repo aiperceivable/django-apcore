@@ -57,8 +57,6 @@ dev = [
     "pytest>=8.0",
     "pytest-django>=4.5",
     "ruff>=0.4",
-    "mypy>=1.10",
-    "django-stubs>=4.2",
     "apdev[dev]>=0.1.6",
 ]
 
@@ -66,9 +64,11 @@ dev = [
 packages = ["src/django_apcore"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 testpaths = ["tests"]
+addopts = "--ds tests.settings"
 django_find_project = false
+norecursedirs = ["example"]
 
 
 [tool.apdev]

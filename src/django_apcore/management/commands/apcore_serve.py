@@ -202,6 +202,7 @@ class Command(BaseCommand):
         log_level = options.get("log_level") or settings.serve_log_level
 
         tags_str = options.get("tags")
+        tags: list[str] | None
         if tags_str:
             tags = [t.strip() for t in tags_str.split(",") if t.strip()]
         else:

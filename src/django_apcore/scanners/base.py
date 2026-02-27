@@ -180,7 +180,7 @@ class BaseScanner(ABC):
             content = response.get("content", {})
             json_content = content.get("application/json", {})
             if "schema" in json_content:
-                schema = json_content["schema"]
+                schema: dict[str, Any] = json_content["schema"]
                 schema = self._resolve_schema(schema, openapi_doc)
                 # Handle array with $ref items
                 if schema.get("type") == "array" and "$ref" in schema.get("items", {}):

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
@@ -49,12 +50,12 @@ class ApcoreSettings:
     acl_path: str | None
     context_factory: str | None
     server_version: str | None
-    executor_config: dict | None
+    executor_config: dict[str, Any] | None
     validate_inputs: bool
-    observability_logging: bool | dict | None
-    tracing: bool | dict | None
-    metrics: bool | dict | None
-    embedded_server: bool | dict | None
+    observability_logging: bool | dict[str, Any] | None
+    tracing: bool | dict[str, Any] | None
+    metrics: bool | dict[str, Any] | None
+    embedded_server: bool | dict[str, Any] | None
     extensions_dir: str | None
     module_validators: list[str]
     task_max_concurrent: int
@@ -485,7 +486,7 @@ VALID_LOG_LEVELS = ("trace", "debug", "info", "warn", "error", "fatal")
 VALID_LOG_FORMATS = ("json",)
 
 
-def _validate_observability_logging_dict(config: dict) -> None:
+def _validate_observability_logging_dict(config: dict[str, Any]) -> None:
     """Validate APCORE_OBSERVABILITY_LOGGING dict keys."""
     if "log_inputs" in config and not isinstance(config["log_inputs"], bool):
         actual = type(config["log_inputs"]).__name__
@@ -528,7 +529,7 @@ def _validate_observability_logging_dict(config: dict) -> None:
         )
 
 
-def _validate_tracing_dict(config: dict) -> None:
+def _validate_tracing_dict(config: dict[str, Any]) -> None:
     """Validate APCORE_TRACING dict keys."""
     if "exporter" in config and not isinstance(config["exporter"], str):
         actual = type(config["exporter"]).__name__
@@ -570,7 +571,7 @@ def _validate_tracing_dict(config: dict) -> None:
         )
 
 
-def _validate_metrics_dict(config: dict) -> None:
+def _validate_metrics_dict(config: dict[str, Any]) -> None:
     """Validate APCORE_METRICS dict keys."""
     if "buckets" in config:
         buckets = config["buckets"]
@@ -587,7 +588,7 @@ def _validate_metrics_dict(config: dict) -> None:
             )
 
 
-def _validate_embedded_server_dict(config: dict) -> None:
+def _validate_embedded_server_dict(config: dict[str, Any]) -> None:
     """Validate APCORE_EMBEDDED_SERVER dict keys."""
     if "transport" in config and config["transport"] not in VALID_TRANSPORTS:
         choices = ", ".join(VALID_TRANSPORTS)

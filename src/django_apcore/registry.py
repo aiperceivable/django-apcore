@@ -147,7 +147,7 @@ def get_metrics_collector() -> Any | None:
     return _metrics_collector
 
 
-def _create_metrics_collector(config: bool | dict) -> Any:
+def _create_metrics_collector(config: bool | dict[str, Any]) -> Any:
     """Create a MetricsCollector from settings.
 
     Args:
@@ -161,6 +161,7 @@ def _create_metrics_collector(config: bool | dict) -> Any:
     if config is True:
         return MetricsCollector()
 
+    assert isinstance(config, dict)
     kwargs: dict[str, Any] = {}
     if "buckets" in config:
         kwargs["buckets"] = config["buckets"]

@@ -21,11 +21,9 @@ REQUIRED_FILES = [
     "demo/__init__.py",
     "demo/settings.py",
     "demo/urls.py",
-    "demo/views.py",
+    "demo/api.py",
     "demo/apcore_modules/__init__.py",
-    "demo/apcore_modules/hello.py",
-    "demo/apcore_modules/math_tools.py",
-    "demo/apcore_modules/slow_task.py",
+    "demo/apcore_modules/task_stats.py",
 ]
 
 
@@ -117,9 +115,7 @@ class TestModulesInit:
             encoding="utf-8"
         )
 
-    @pytest.mark.parametrize(
-        "func_name", ["hello_world", "add", "multiply", "slow_process"]
-    )
+    @pytest.mark.parametrize("func_name", ["task_stats"])
     def test_exports_function(self, init_source, func_name):
         assert (
             func_name in init_source
@@ -133,16 +129,37 @@ class TestUrlsFile:
     def urls_source(self):
         return (EXAMPLE_DIR / "demo" / "urls.py").read_text(encoding="utf-8")
 
-    @pytest.mark.parametrize(
-        "route",
-        [
-            "api/hello/",
-            "api/add/",
-            "api/multiply/",
-            "api/tasks/submit/",
-            "api/tasks/<str:task_id>/status/",
-            "api/modules/",
-        ],
-    )
-    def test_has_route(self, urls_source, route):
-        assert route in urls_source, f"urls.py missing route: {route}"
+    def test_has_api_route(self, urls_source):
+        assert "api/" in urls_source, "urls.py missing api/ route"
+
+    def test_uses_ninja(self, urls_source):
+        assert "api.urls" in urls_source, "urls.py should use django-ninja api.urls"
+
+
+class TestBindingFiles:
+    """Verify YAML binding files exist and are valid."""
+
+    EXPECTED_BINDINGS = [
+        "api.tasks.list.binding.yaml",
+        "api.tasks.get.binding.yaml",
+        "api.tasks.create.binding.yaml",
+        "api.tasks.update.binding.yaml",
+        "api.tasks.delete.binding.yaml",
+    ]
+
+    @pytest.mark.parametrize("binding_file", EXPECTED_BINDINGS)
+    def test_binding_file_exists(self, binding_file):
+        path = EXAMPLE_DIR / "demo" / "apcore_modules" / binding_file
+        assert path.exists(), f"Missing binding file: {binding_file}"
+
+    @pytest.mark.parametrize("binding_file", EXPECTED_BINDINGS)
+    def test_binding_file_valid_yaml(self, binding_file):
+        path = EXAMPLE_DIR / "demo" / "apcore_modules" / binding_file
+        content = path.read_text(encoding="utf-8")
+        data = yaml.safe_load(content)
+        assert isinstance(data, dict)
+        assert "bindings" in data
+        assert len(data["bindings"]) >= 1
+        first = data["bindings"][0]
+        assert "module_id" in first
+        assert "target" in first

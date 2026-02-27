@@ -18,7 +18,7 @@ from django_apcore.tasks import get_task_manager
 try:
     from apcore import TaskStatus
 except ImportError:  # pragma: no cover
-    TaskStatus = None  # type: ignore[assignment,misc]
+    TaskStatus = None
 
 
 class Command(BaseCommand):
@@ -72,7 +72,7 @@ class Command(BaseCommand):
         elif subcommand == "cleanup":
             self._handle_cleanup(tm, options)
 
-    def _handle_list(self, tm: Any, options: dict) -> None:
+    def _handle_list(self, tm: Any, options: dict[str, Any]) -> None:
         status_filter = options.get("status")
         if status_filter and TaskStatus is not None:
             status_filter = TaskStatus[status_filter.upper()]
@@ -85,7 +85,7 @@ class Command(BaseCommand):
                 f"  {task.task_id}  {task.module_id}  {task.status.value}"
             )
 
-    def _handle_cancel(self, tm: Any, options: dict) -> None:
+    def _handle_cancel(self, tm: Any, options: dict[str, Any]) -> None:
         task_id = options["task_id"]
         result = asyncio.run(tm.cancel(task_id))
         if result:
@@ -93,7 +93,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(f"Task {task_id} could not be cancelled.")
 
-    def _handle_cleanup(self, tm: Any, options: dict) -> None:
+    def _handle_cleanup(self, tm: Any, options: dict[str, Any]) -> None:
         max_age = options.get("max_age")
         if max_age is None:
             max_age = self._settings.task_cleanup_age

@@ -340,7 +340,7 @@ def _import_and_instantiate(dotted_path: str) -> Any | None:
         return None
 
 
-def _build_span_exporter(config: bool | dict) -> Any | None:
+def _build_span_exporter(config: bool | dict[str, Any]) -> Any | None:
     """Build a span exporter from tracing configuration.
 
     Args:

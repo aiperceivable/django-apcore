@@ -61,7 +61,7 @@ class DRFScanner(BaseScanner):
         from drf_spectacular.generators import SchemaGenerator
 
         generator = SchemaGenerator()
-        schema = generator.get_schema()
+        schema: dict[str, Any] = generator.get_schema()
         return schema
 
     def _schema_to_modules(self, schema: dict[str, Any]) -> list[ScannedModule]:
