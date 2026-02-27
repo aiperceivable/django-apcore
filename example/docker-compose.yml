@@ -15,9 +15,7 @@ services:
     build:
       context: ..
       dockerfile: example/Dockerfile
-    command: >
-      sh -c "python manage.py migrate --run-syncdb &&
-             python manage.py apcore_serve --transport streamable-http --host 0.0.0.0 --port 9090"
+    command: bash entrypoint.sh
     ports:
       - "9090:9090"
     environment:

@@ -8,4 +8,6 @@ COPY . .
 # Install django-apcore in editable mode with all extras
 RUN pip install --no-cache-dir -e ".[all]"
 
+ENV DJANGO_SETTINGS_MODULE=demo.settings
+
 WORKDIR /app/example

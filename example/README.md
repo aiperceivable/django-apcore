@@ -1,8 +1,97 @@
-# django-apcore Docker Demo
+# django-apcore Demo
 
-A self-contained Docker demo showcasing django-apcore's core features: `@module` decorator, `executor_call()` from views, MCP server via `apcore_serve`, and async tasks.
+Task Manager API demonstrating django-ninja routes → NinjaScanner → Registry → MCP Server pipeline with observability.
 
-## Quick Start
+## What's Inside
+
+| File | Purpose |
+|---|---|
+| `demo/api.py` | Task Manager CRUD API with Pydantic schemas (django-ninja) |
+| `demo/apcore_modules/task_stats.py` | Standalone `@module` example |
+| `Dockerfile` | Installs django-apcore[all] from local source |
+| `docker-compose.yml` | One-click Docker launch |
+| `entrypoint.sh` | Scans routes then starts the MCP server |
+
+## Local Development
+
+### Prerequisites
+
+From the project root, install django-apcore in editable mode with all extras:
+
+```bash
+pip install -e ".[all]"
+```
+
+### 1. Scan routes
+
+```bash
+cd example
+export DJANGO_SETTINGS_MODULE=demo.settings
+
+# Generate YAML bindings
+python manage.py apcore_scan --source ninja --output yaml --dir ./demo/apcore_modules
+```
+
+### 2. Start the Django dev server
+
+```bash
+python manage.py runserver
+```
+
+### 3. Start the MCP server (separate terminal)
+
+```bash
+python manage.py apcore_serve --transport streamable-http --host 127.0.0.1 --port 9090 --validate-inputs --log-level DEBUG
+```
+
+### 4. Verify
+
+```bash
+# List tasks
+curl http://localhost:8000/api/tasks
+
+# Create a task
+curl -X POST http://localhost:8000/api/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Buy milk", "description": "From the store"}'
+
+# Get a task
+curl http://localhost:8000/api/tasks/1
+
+# Update a task
+curl -X PUT http://localhost:8000/api/tasks/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"done": true}'
+
+# Delete a task
+curl -X DELETE http://localhost:8000/api/tasks/2
+```
+
+Connect from any MCP client (e.g., Claude Desktop) using `http://127.0.0.1:9090`.
+
+### 5. Explorer (optional)
+
+The MCP server includes a built-in Tool Explorer UI:
+
+> **Security:** The Explorer exposes module schemas and execution via unauthenticated HTTP.
+> Only enable in **development/staging**. Do NOT enable in production without adding your own auth layer.
+
+Browse to `http://127.0.0.1:9090/explorer/` for the interactive module explorer with Try-it execution.
+
+#### Example payloads for Try-it
+
+The demo ships with 2 seed tasks (id 1 and 2). Use these example inputs in the explorer:
+
+| Module | Example input |
+|---|---|
+| `task_stats.v1` | *(no input required)* |
+| `api.tasks.get` | *(no input required)* |
+| `api.tasks.get_2` | `{"task_id": 1}` |
+| `api.tasks.post` | `{"title": "Buy milk", "description": "From the store", "done": false}` |
+| `api.tasks.put` | `{"task_id": 1, "title": "Try django-apcore (done!)", "done": true}` |
+| `api.tasks.delete` | `{"task_id": 2}` |
+
+## Docker
 
 ```bash
 cd example
@@ -12,64 +101,32 @@ docker compose up --build
 This starts two services:
 
 | Service | URL | Description |
-|---------|-----|-------------|
+|---|---|---|
 | `web` | http://localhost:8000 | Django API server |
-| `mcp` | http://localhost:9090 | MCP server (`apcore_serve`) |
-
-## Registered Modules
-
-| Module ID | Function | Description |
-|-----------|----------|-------------|
-| `hello` | `hello_world(name)` | Greet someone by name |
-| `math.add` | `add(a, b)` | Add two numbers |
-| `math.multiply` | `multiply(a, b)` | Multiply two numbers |
-| `slow.process` | `slow_process(seconds)` | Simulate a long-running task |
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/hello/` | Call the hello module |
-| POST | `/api/add/` | Add two numbers |
-| POST | `/api/multiply/` | Multiply two numbers |
-| POST | `/api/tasks/submit/` | Submit an async task |
-| GET | `/api/tasks/<task_id>/status/` | Poll task status |
-| GET | `/api/modules/` | List registered module count |
-
-## curl Examples
+| `mcp` | http://localhost:9090 | MCP server (scan → serve via `entrypoint.sh`) |
 
 ```bash
-# Hello (default)
-curl http://localhost:8000/api/hello/
-
-# Hello with name
-curl http://localhost:8000/api/hello/?name=Django
-
-# Add
-curl -X POST http://localhost:8000/api/add/ \
-  -H 'Content-Type: application/json' \
-  -d '{"a": 10, "b": 32}'
-
-# Multiply
-curl -X POST http://localhost:8000/api/multiply/ \
-  -H 'Content-Type: application/json' \
-  -d '{"a": 7, "b": 6}'
-
-# Submit async task
-curl -X POST http://localhost:8000/api/tasks/submit/ \
-  -H 'Content-Type: application/json' \
-  -d '{"module_id": "slow.process", "inputs": {"seconds": 3}}'
-
-# Poll task status (replace <task_id> with the returned task_id)
-curl http://localhost:8000/api/tasks/<task_id>/status/
-
-# List modules
-curl http://localhost:8000/api/modules/
+# Cleanup
+docker compose down
 ```
 
-## MCP Server
+## Running Tests
 
-The MCP server runs on port 9090 using the `streamable-http` transport. Connect your MCP-compatible AI agent to `http://localhost:9090` to discover and call the registered modules.
+```bash
+cd example
+python -m pytest tests/ -v
+```
+
+## Features Demonstrated
+
+- **Route scanning** — `apcore_scan --source ninja` discovers all 5 CRUD routes
+- **Annotation inference** — GET→readonly, DELETE→destructive, PUT→idempotent
+- **Pydantic schemas** — Input validation from `TaskCreate` and `TaskUpdate` models
+- **@module decorator** — `task_stats.v1` registered alongside scanned routes
+- **MCP Tool Explorer** — Browser-based module viewer via `apcore_serve --explorer`
+- **MCP server** — Streamable HTTP transport on port 9090
+- **Observability** — Tracing (stdout), metrics, and structured JSON logging
+- **Input validation** — `--validate-inputs` checks tool inputs against schemas
 
 ## Project Structure
 
@@ -77,15 +134,17 @@ The MCP server runs on port 9090 using the `streamable-http` transport. Connect 
 example/
 ├── Dockerfile              # Python 3.11 image with django-apcore installed
 ├── docker-compose.yml      # web + mcp services
+├── entrypoint.sh           # scan → serve pipeline
+├── .env.example            # Environment variable template
 ├── manage.py               # Django manage.py
+├── conftest.py             # pytest-django configuration
 ├── demo/
 │   ├── settings.py         # Django settings with apcore config
-│   ├── urls.py             # API route definitions
-│   ├── views.py            # Views using executor_call() and submit_task()
+│   ├── urls.py             # API route (django-ninja)
+│   ├── api.py              # Task Manager CRUD with Pydantic schemas
 │   └── apcore_modules/
 │       ├── __init__.py     # Re-exports for auto-discovery
-│       ├── hello.py        # @module "hello"
-│       ├── math_tools.py   # @module "math.add", "math.multiply"
-│       └── slow_task.py    # @module "slow.process"
-└── README.md
+│       └── task_stats.py   # @module "task_stats.v1"
+└── tests/
+    └── test_demo.py        # Unit + integration tests
 ```

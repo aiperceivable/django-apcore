@@ -4,8 +4,6 @@ DjangoDiscoverer scans dir() of this module, so all decorated functions
 must be importable from here.
 """
 
-from demo.apcore_modules.hello import hello_world
-from demo.apcore_modules.math_tools import add, multiply
-from demo.apcore_modules.slow_task import slow_process
+from demo.apcore_modules.task_stats import task_stats
 
-__all__ = ["hello_world", "add", "multiply", "slow_process"]
+__all__ = ["task_stats"]

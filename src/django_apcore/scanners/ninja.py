@@ -71,12 +71,18 @@ class NinjaScanner(BaseScanner):
 
     def _find_apis(self, patterns: Any, apis: list[Any], api_class: type) -> None:
         """Recursively search URL patterns for NinjaAPI instances."""
+        import functools
+
         for pattern in patterns:
-            if hasattr(pattern, "callback") and isinstance(
-                getattr(pattern.callback, "api", None), api_class
-            ):
-                api = pattern.callback.api
-                if api not in apis:
+            cb = getattr(pattern, "callback", None)
+            if cb is not None:
+                # Direct attribute: callback.api (older django-ninja versions)
+                api = getattr(cb, "api", None)
+                # functools.partial keyword: django-ninja wraps internal
+                # views (openapi_json, default_home) as partial(fn, api=...)
+                if api is None and isinstance(cb, functools.partial):
+                    api = cb.keywords.get("api")
+                if isinstance(api, api_class) and api not in apis:
                     apis.append(api)
             if hasattr(pattern, "url_patterns"):
                 self._find_apis(pattern.url_patterns, apis, api_class)
@@ -87,7 +93,9 @@ class NinjaScanner(BaseScanner):
         modules: list[ScannedModule] = []
 
         for api in apis:
-            api_prefix = getattr(api, "urls_namespace", "") or ""
+            # OpenAPI paths already contain the full route (e.g. /api/tasks),
+            # so we don't need urls_namespace as an additional prefix.
+            api_prefix = ""
             try:
                 schema = api.get_openapi_schema()
                 paths = schema.get("paths", {})
