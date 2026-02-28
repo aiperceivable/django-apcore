@@ -152,6 +152,12 @@ class NinjaScanner(BaseScanner):
         Traverses NinjaAPI's internal routing structures to find the actual
         view function for each operation, so that the generated ``target``
         field uses the correct Python module and function name.
+
+        In django-ninja >= 1.5, ``op.operation_id`` is ``None`` unless the
+        user explicitly sets it — the operationId is only auto-generated
+        in the OpenAPI schema output.  To handle this, we also index by
+        ``func.__name__`` so the fallback lookup in
+        ``_operation_to_module`` can match by suffix.
         """
         func_map: dict[str, tuple[str, str]] = {}
         try:
@@ -161,9 +167,12 @@ class NinjaScanner(BaseScanner):
                         func = op.view_func
                         if func is None:
                             continue
+                        info = (func.__module__, func.__name__)
                         op_id = getattr(op, "operation_id", None)
                         if op_id:
-                            func_map[op_id] = (func.__module__, func.__name__)
+                            func_map[op_id] = info
+                        # Always index by func name for fallback lookup
+                        func_map[func.__name__] = info
         except Exception:
             logger.debug(
                 "Could not build view function map from NinjaAPI internals",
@@ -204,8 +213,16 @@ class NinjaScanner(BaseScanner):
 
             tags = operation.get("tags", [])
 
-            # Resolve target from actual view function when available
+            # Resolve target from actual view function when available.
+            # Try exact operationId first, then suffix match (django-ninja
+            # generates operationId as "{prefix}_{func_name}" in the
+            # OpenAPI schema but may leave op.operation_id as None).
             func_info = func_map.get(operation_id)
+            if not func_info:
+                for name, info in func_map.items():
+                    if operation_id.endswith(f"_{name}"):
+                        func_info = info
+                        break
             if func_info:
                 target = f"{func_info[0]}:{func_info[1]}"
             else:
