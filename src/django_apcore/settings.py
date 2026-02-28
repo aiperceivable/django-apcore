@@ -72,6 +72,10 @@ class ApcoreSettings:
     explorer_allow_execute: bool
     hot_reload: bool
     hot_reload_paths: list[str]
+    jwt_secret: str | None
+    jwt_algorithm: str
+    jwt_audience: str | None
+    jwt_issuer: str | None
 
 
 def get_apcore_settings() -> ApcoreSettings:
@@ -445,6 +449,38 @@ def get_apcore_settings() -> ApcoreSettings:
             "APCORE_HOT_RELOAD_PATHS must be a list of" " string paths."
         )
 
+    # --- JWT authentication settings (apcore-mcp 0.7.0+) ---
+
+    jwt_secret = getattr(settings, "APCORE_JWT_SECRET", None)
+    if jwt_secret is not None and not isinstance(jwt_secret, str):
+        actual = type(jwt_secret).__name__
+        raise ImproperlyConfigured(
+            "APCORE_JWT_SECRET must be a string." f" Got: {actual}"
+        )
+
+    jwt_algorithm = getattr(settings, "APCORE_JWT_ALGORITHM", "HS256")
+    if jwt_algorithm is None:
+        jwt_algorithm = "HS256"
+    if not isinstance(jwt_algorithm, str):
+        actual = type(jwt_algorithm).__name__
+        raise ImproperlyConfigured(
+            "APCORE_JWT_ALGORITHM must be a string." f" Got: {actual}"
+        )
+
+    jwt_audience = getattr(settings, "APCORE_JWT_AUDIENCE", None)
+    if jwt_audience is not None and not isinstance(jwt_audience, str):
+        actual = type(jwt_audience).__name__
+        raise ImproperlyConfigured(
+            "APCORE_JWT_AUDIENCE must be a string." f" Got: {actual}"
+        )
+
+    jwt_issuer = getattr(settings, "APCORE_JWT_ISSUER", None)
+    if jwt_issuer is not None and not isinstance(jwt_issuer, str):
+        actual = type(jwt_issuer).__name__
+        raise ImproperlyConfigured(
+            "APCORE_JWT_ISSUER must be a string." f" Got: {actual}"
+        )
+
     return ApcoreSettings(
         module_dir=module_dir,
         auto_discover=auto_discover,
@@ -479,6 +515,10 @@ def get_apcore_settings() -> ApcoreSettings:
         explorer_allow_execute=explorer_allow_execute,
         hot_reload=hot_reload,
         hot_reload_paths=hot_reload_paths,
+        jwt_secret=jwt_secret,
+        jwt_algorithm=jwt_algorithm,
+        jwt_audience=jwt_audience,
+        jwt_issuer=jwt_issuer,
     )
 
 

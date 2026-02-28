@@ -91,6 +91,43 @@ The demo ships with 2 seed tasks (id 1 and 2). Use these example inputs in the e
 | `api.tasks.update` | `{"task_id": 1, "title": "Try django-apcore (done!)", "done": true}` |
 | `api.tasks.delete` | `{"task_id": 2}` |
 
+### 6. JWT Authentication (optional)
+
+Enable JWT-based authentication on the MCP server (requires apcore-mcp >= 0.7.0). When enabled, clients must send a valid `Authorization: Bearer <token>` header.
+
+Uncomment the `APCORE_JWT_*` lines in `demo/settings.py`, then restart the MCP server:
+
+```bash
+python manage.py apcore_serve --transport streamable-http --host 127.0.0.1 --port 9090 --jwt-secret "demo-jwt-secret"
+```
+
+Or pass all JWT options via CLI:
+
+```bash
+python manage.py apcore_serve \
+  --transport streamable-http --port 9090 \
+  --jwt-secret "demo-jwt-secret" \
+  --jwt-algorithm HS256 \
+  --jwt-audience task-manager-api \
+  --jwt-issuer task-manager
+```
+
+Generate a test token (Python one-liner):
+
+```bash
+python -c "import jwt; print(jwt.encode({'sub': 'demo-user', 'roles': ['admin']}, 'demo-jwt-secret', algorithm='HS256'))"
+```
+
+Then use it with curl:
+
+```bash
+TOKEN=$(python -c "import jwt; print(jwt.encode({'sub': 'demo-user', 'roles': ['admin']}, 'demo-jwt-secret', algorithm='HS256'))")
+curl http://localhost:9090/mcp \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
 ## Docker
 
 ```bash
@@ -129,6 +166,7 @@ python -m pytest tests/ -v
 - **MCP server** — Streamable HTTP transport on port 9090
 - **Observability** — Tracing (stdout), metrics, and structured JSON logging
 - **Input validation** — `--validate-inputs` checks tool inputs against schemas
+- **JWT authentication** — Optional Bearer token auth via `APCORE_JWT_SECRET` (apcore-mcp >= 0.7.0)
 
 ## Project Structure
 

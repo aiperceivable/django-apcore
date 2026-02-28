@@ -35,6 +35,10 @@ def _mock_settings(**overrides):
         "explorer_enabled": False,
         "explorer_prefix": "/explorer",
         "explorer_allow_execute": False,
+        "jwt_secret": None,
+        "jwt_algorithm": "HS256",
+        "jwt_audience": None,
+        "jwt_issuer": None,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
@@ -407,3 +411,124 @@ class TestApcoreServeV010:
             call_command("apcore_serve")
             call_kwargs = mock_serve.call_args.kwargs
             assert call_kwargs.get("tags") == ["internal"]
+
+
+class TestApcoreServeJWT:
+    """Test JWT authentication in apcore_serve command."""
+
+    def test_jwt_secret_flag_creates_authenticator(self):
+        """--jwt-secret creates a JWTAuthenticator and passes to serve()."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+            patch("apcore_mcp.auth.JWTAuthenticator") as mock_jwt_cls,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            mock_jwt = MagicMock()
+            mock_jwt_cls.return_value = mock_jwt
+
+            call_command("apcore_serve", "--jwt-secret", "test-secret")
+            mock_jwt_cls.assert_called_once_with(
+                "test-secret",
+                algorithms=["HS256"],
+                audience=None,
+                issuer=None,
+            )
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("authenticator") is mock_jwt
+
+    def test_jwt_settings_fallback(self):
+        """JWT settings from Django config are used when no CLI flags."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+            patch("apcore_mcp.auth.JWTAuthenticator") as mock_jwt_cls,
+        ):
+            mock_settings.return_value = _mock_settings(
+                jwt_secret="settings-secret",
+                jwt_algorithm="RS256",
+                jwt_audience="my-api",
+                jwt_issuer="my-issuer",
+            )
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            mock_jwt = MagicMock()
+            mock_jwt_cls.return_value = mock_jwt
+
+            call_command("apcore_serve")
+            mock_jwt_cls.assert_called_once_with(
+                "settings-secret",
+                algorithms=["RS256"],
+                audience="my-api",
+                issuer="my-issuer",
+            )
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("authenticator") is mock_jwt
+
+    def test_no_authenticator_when_no_secret(self):
+        """No authenticator created when jwt_secret is not configured."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            call_command("apcore_serve")
+            call_kwargs = mock_serve.call_args.kwargs
+            assert call_kwargs.get("authenticator") is None
+
+    def test_jwt_cli_overrides_settings(self):
+        """CLI --jwt-* flags override Django settings."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+            patch("apcore_mcp.auth.JWTAuthenticator") as mock_jwt_cls,
+        ):
+            mock_settings.return_value = _mock_settings(
+                jwt_secret="settings-secret",
+                jwt_algorithm="HS256",
+            )
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            mock_jwt_cls.return_value = MagicMock()
+
+            call_command(
+                "apcore_serve",
+                "--jwt-secret",
+                "cli-secret",
+                "--jwt-algorithm",
+                "RS256",
+                "--jwt-audience",
+                "cli-audience",
+                "--jwt-issuer",
+                "cli-issuer",
+            )
+            mock_jwt_cls.assert_called_once_with(
+                "cli-secret",
+                algorithms=["RS256"],
+                audience="cli-audience",
+                issuer="cli-issuer",
+            )
+
+    def test_jwt_import_error_raises_command_error(self):
+        """CommandError when apcore-mcp < 0.7.0 and jwt_secret is set."""
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+            patch.dict("sys.modules", {"apcore_mcp.auth": None}),
+        ):
+            mock_settings.return_value = _mock_settings()
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+
+            with pytest.raises(CommandError, match="apcore-mcp >= 0.7.0"):
+                call_command("apcore_serve", "--jwt-secret", "test-secret")

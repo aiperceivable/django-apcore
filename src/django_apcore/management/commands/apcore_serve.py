@@ -37,6 +37,7 @@ def serve(
     explorer: bool = False,
     explorer_prefix: str = "/explorer",
     allow_execute: bool = False,
+    authenticator: Any = None,
 ) -> None:
     """Delegate to apcore_mcp.serve().
 
@@ -76,6 +77,8 @@ def serve(
         kwargs["explorer"] = True
         kwargs["explorer_prefix"] = explorer_prefix
         kwargs["allow_execute"] = allow_execute
+    if authenticator is not None:
+        kwargs["authenticator"] = authenticator
 
     apcore_serve(registry_or_executor, **kwargs)
 
@@ -171,6 +174,36 @@ class Command(BaseCommand):
             default=None,
             dest="allow_execute",
             help="Allow tool execution from the explorer UI.",
+        )
+        parser.add_argument(
+            "--jwt-secret",
+            type=str,
+            default=None,
+            dest="jwt_secret",
+            help="JWT secret/key for authentication. "
+            "Default: APCORE_JWT_SECRET setting.",
+        )
+        parser.add_argument(
+            "--jwt-algorithm",
+            type=str,
+            default=None,
+            dest="jwt_algorithm",
+            help='JWT algorithm (default: "HS256"). '
+            "Default: APCORE_JWT_ALGORITHM setting.",
+        )
+        parser.add_argument(
+            "--jwt-audience",
+            type=str,
+            default=None,
+            dest="jwt_audience",
+            help="Expected JWT audience claim. Default: APCORE_JWT_AUDIENCE setting.",
+        )
+        parser.add_argument(
+            "--jwt-issuer",
+            type=str,
+            default=None,
+            dest="jwt_issuer",
+            help="Expected JWT issuer claim. Default: APCORE_JWT_ISSUER setting.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -312,6 +345,48 @@ class Command(BaseCommand):
                 f"[django-apcore] Tool Explorer enabled at {explorer_prefix}"
             )
 
+        # Resolve JWT authentication
+        jwt_secret = (
+            options.get("jwt_secret")
+            if options.get("jwt_secret") is not None
+            else settings.jwt_secret
+        )
+        authenticator = None
+        if jwt_secret is not None:
+            jwt_algorithm = (
+                options.get("jwt_algorithm")
+                if options.get("jwt_algorithm") is not None
+                else settings.jwt_algorithm
+            )
+            jwt_audience = (
+                options.get("jwt_audience")
+                if options.get("jwt_audience") is not None
+                else settings.jwt_audience
+            )
+            jwt_issuer = (
+                options.get("jwt_issuer")
+                if options.get("jwt_issuer") is not None
+                else settings.jwt_issuer
+            )
+
+            try:
+                from apcore_mcp.auth import JWTAuthenticator
+            except ImportError:
+                raise CommandError(
+                    "apcore-mcp >= 0.7.0 is required for JWT authentication. "
+                    "Install with: pip install 'apcore-mcp>=0.7.0'"
+                ) from None
+
+            authenticator = JWTAuthenticator(
+                jwt_secret,
+                algorithms=[jwt_algorithm],
+                audience=jwt_audience,
+                issuer=jwt_issuer,
+            )
+
+            if verbosity >= 1:
+                self.stdout.write("[django-apcore] JWT authentication enabled.")
+
         # Delegate to apcore-mcp
         try:
             serve(
@@ -331,6 +406,7 @@ class Command(BaseCommand):
                 explorer=explorer_enabled,
                 explorer_prefix=explorer_prefix,
                 allow_execute=allow_execute,
+                authenticator=authenticator,
             )
         except ImportError as e:
             msg = (

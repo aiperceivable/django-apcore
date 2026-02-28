@@ -249,6 +249,23 @@ def start_embedded_server() -> Any | None:
         if settings.serve_prefix:
             kwargs["prefix"] = settings.serve_prefix
 
+        # JWT authentication (apcore-mcp 0.7.0+)
+        if settings.jwt_secret is not None:
+            try:
+                from apcore_mcp.auth import JWTAuthenticator
+
+                kwargs["authenticator"] = JWTAuthenticator(
+                    settings.jwt_secret,
+                    algorithms=[settings.jwt_algorithm],
+                    audience=settings.jwt_audience,
+                    issuer=settings.jwt_issuer,
+                )
+            except ImportError:
+                logger.warning(
+                    "apcore-mcp >= 0.7.0 is required for JWT authentication; "
+                    "APCORE_JWT_SECRET will be ignored"
+                )
+
         server = MCPServer(registry_or_executor, **kwargs)
         server.start()
         _embedded_server = server

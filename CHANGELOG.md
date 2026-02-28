@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-02-28
+
+### Added
+
+- **JWT authentication** for the MCP server (requires `apcore-mcp >= 0.7.0`)
+  - 4 new Django settings: `APCORE_JWT_SECRET`, `APCORE_JWT_ALGORITHM`, `APCORE_JWT_AUDIENCE`, `APCORE_JWT_ISSUER`
+  - 4 new CLI flags for `apcore_serve`: `--jwt-secret`, `--jwt-algorithm`, `--jwt-audience`, `--jwt-issuer`
+  - CLI flags override Django settings; JWT is opt-in (disabled when `APCORE_JWT_SECRET` is not set)
+  - Embedded MCP server (`APCORE_EMBEDDED_SERVER`) also supports JWT when configured
+  - JWT `sub` claim is mapped to an apcore `Identity`
+- `authenticator` parameter on the `serve()` wrapper function
+- Example project updated with JWT configuration (settings, `.env.example`, `docker-compose.yml`, README)
+
+### Changed
+
+- Bumped `apcore-mcp` dependency floor from `>= 0.6.0` to `>= 0.7.0` (for `apcore_mcp.auth.JWTAuthenticator`)
+- README settings table and CLI flags table updated with JWT options
+
+### Testing
+
+- 434 tests (up from 393 in 0.1.0)
+- New test classes: `TestJWTSettings`, `TestApcoreServeJWT`, and JWT-related embedded server tests
+
+## [0.1.1] - 2026-02-24
+
+### Fixed
+
+- Removed outdated version check from `test_init.py`
+- Removed ruff format check from CI workflow
+
+### Changed
+
+- Updated project URLs in `pyproject.toml`
+
 ## [0.1.0] - 2026-02-23
 
 Initial public release of django-apcore — a Django app that bridges the apcore protocol to Django, enabling existing REST APIs to be served as MCP tools for AI agents.

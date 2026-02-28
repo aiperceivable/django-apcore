@@ -147,3 +147,38 @@ class TestEmbeddedServer:
         reg._embedded_server = MagicMock()
         _reset_registry()
         assert reg._embedded_server is None
+
+    @override_settings(APCORE_EMBEDDED_SERVER=True, APCORE_JWT_SECRET="test-secret")
+    @patch("apcore_mcp.auth.JWTAuthenticator")
+    @patch("apcore_mcp.MCPServer")
+    def test_jwt_settings_create_authenticator(self, mock_server_cls, mock_jwt_cls):
+        """JWT settings create authenticator kwarg for MCPServer."""
+        mock_server = MagicMock()
+        mock_server_cls.return_value = mock_server
+        mock_jwt = MagicMock()
+        mock_jwt_cls.return_value = mock_jwt
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        mock_jwt_cls.assert_called_once_with(
+            "test-secret",
+            algorithms=["HS256"],
+            audience=None,
+            issuer=None,
+        )
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert call_kwargs["authenticator"] is mock_jwt
+
+    @override_settings(APCORE_EMBEDDED_SERVER=True)
+    @patch("apcore_mcp.MCPServer")
+    def test_no_authenticator_when_no_jwt_secret(self, mock_server_cls):
+        """No authenticator when jwt_secret is None."""
+        mock_server = MagicMock()
+        mock_server_cls.return_value = mock_server
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert "authenticator" not in call_kwargs

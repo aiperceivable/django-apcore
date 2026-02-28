@@ -707,3 +707,67 @@ class TestV030SettingsValidation:
 
         s = get_apcore_settings()
         assert s.serve_log_level == "INFO"
+
+
+class TestJWTSettings:
+    """Test APCORE_JWT_* settings."""
+
+    def test_jwt_defaults(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.jwt_secret is None
+        assert s.jwt_algorithm == "HS256"
+        assert s.jwt_audience is None
+        assert s.jwt_issuer is None
+
+    @override_settings(
+        APCORE_JWT_SECRET="my-secret",
+        APCORE_JWT_ALGORITHM="RS256",
+        APCORE_JWT_AUDIENCE="my-api",
+        APCORE_JWT_ISSUER="my-issuer",
+    )
+    def test_jwt_custom_values(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.jwt_secret == "my-secret"
+        assert s.jwt_algorithm == "RS256"
+        assert s.jwt_audience == "my-api"
+        assert s.jwt_issuer == "my-issuer"
+
+    @override_settings(APCORE_JWT_SECRET=123)
+    def test_jwt_secret_must_be_string(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_JWT_SECRET must be a string"
+        ):
+            get_apcore_settings()
+
+    @override_settings(APCORE_JWT_ALGORITHM=123)
+    def test_jwt_algorithm_must_be_string(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_JWT_ALGORITHM must be a string"
+        ):
+            get_apcore_settings()
+
+    @override_settings(APCORE_JWT_AUDIENCE=123)
+    def test_jwt_audience_must_be_string(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_JWT_AUDIENCE must be a string"
+        ):
+            get_apcore_settings()
+
+    @override_settings(APCORE_JWT_ISSUER=123)
+    def test_jwt_issuer_must_be_string(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_JWT_ISSUER must be a string"
+        ):
+            get_apcore_settings()

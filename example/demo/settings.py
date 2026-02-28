@@ -46,6 +46,14 @@ APCORE_SERVE_VALIDATE_INPUTS = True
 APCORE_EXPLORER_ENABLED = True  # browse tools at /explorer on MCP server
 APCORE_EXPLORER_ALLOW_EXECUTE = True  # allow Try-it execution
 
+# JWT Authentication (apcore-mcp >= 0.7.0)
+# Uncomment to enable JWT auth on the MCP server.
+# Clients must send "Authorization: Bearer <token>" header.
+# APCORE_JWT_SECRET = "change-me-in-production"
+# APCORE_JWT_ALGORITHM = "HS256"
+# APCORE_JWT_AUDIENCE = "task-manager-api"
+# APCORE_JWT_ISSUER = "task-manager"
+
 # Observability
 APCORE_TRACING_ENABLED = True
 APCORE_TRACING_EXPORTER = "stdout"

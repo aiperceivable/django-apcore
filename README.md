@@ -146,7 +146,7 @@ pip install django-apcore[mcp]
 |-------|---------|---------|---------|
 | `ninja` | `django-ninja` | `>= 1.0` | django-ninja endpoint scanning |
 | `drf` | `drf-spectacular` | `>= 0.27` | DRF endpoint scanning via OpenAPI |
-| `mcp` | `apcore-mcp` | `>= 0.6.0` | MCP server and transport layer |
+| `mcp` | `apcore-mcp` | `>= 0.7.0` | MCP server, transport layer, and JWT authentication |
 
 ## Configuration
 
@@ -174,6 +174,10 @@ All settings are prefixed with `APCORE_` and read from Django's `settings.py`.
 | `APCORE_EXPLORER_ENABLED` | `bool` | `False` | Enable the browser-based Tool Explorer UI on the MCP server |
 | `APCORE_EXPLORER_PREFIX` | `str` | `"/explorer"` | URL prefix for the explorer UI |
 | `APCORE_EXPLORER_ALLOW_EXECUTE` | `bool` | `False` | Allow tool execution from the explorer UI |
+| `APCORE_JWT_SECRET` | `str \| None` | `None` | JWT secret/key. When set, enables JWT authentication on the MCP server |
+| `APCORE_JWT_ALGORITHM` | `str` | `"HS256"` | JWT algorithm (e.g., `HS256`, `RS256`) |
+| `APCORE_JWT_AUDIENCE` | `str \| None` | `None` | Expected JWT `aud` claim |
+| `APCORE_JWT_ISSUER` | `str \| None` | `None` | Expected JWT `iss` claim |
 
 ### Observability Logging Options
 
@@ -258,6 +262,25 @@ python manage.py apcore_serve --transport streamable-http --explorer --allow-exe
 - **Execution disabled by default** — set `APCORE_EXPLORER_ALLOW_EXECUTE = True` or `--allow-execute` to enable.
 - **No auth** — do NOT enable in production without a reverse proxy.
 
+### JWT Authentication
+
+Enable JWT-based authentication on the MCP server (requires apcore-mcp >= 0.7.0). When configured, clients must send a valid `Authorization: Bearer <token>` header. The JWT `sub` claim is mapped to an apcore `Identity`.
+
+```python
+# settings.py
+APCORE_JWT_SECRET = "your-secret-key"
+APCORE_JWT_ALGORITHM = "HS256"       # default
+APCORE_JWT_AUDIENCE = "my-api"       # optional
+APCORE_JWT_ISSUER = "my-issuer"      # optional
+```
+
+Or via CLI flags:
+
+```bash
+python manage.py apcore_serve --transport streamable-http --jwt-secret "your-secret-key"
+python manage.py apcore_serve --jwt-secret "key" --jwt-algorithm RS256 --jwt-audience my-api
+```
+
 ## Management Commands
 
 ### `apcore_scan`
@@ -300,6 +323,10 @@ python manage.py apcore_serve [options]
 | `--log-level` | | MCP server log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 | `--tags` | | Filter modules by tags (comma-separated) |
 | `--prefix` | | Filter modules by ID prefix |
+| `--jwt-secret` | | JWT secret/key for authentication |
+| `--jwt-algorithm` | | JWT algorithm (default: `HS256`) |
+| `--jwt-audience` | | Expected JWT `aud` claim |
+| `--jwt-issuer` | | Expected JWT `iss` claim |
 
 ### `apcore_export`
 
