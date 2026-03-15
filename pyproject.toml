@@ -58,7 +58,7 @@ dev = [
     "pytest>=8.0",
     "pytest-django>=4.5",
     "ruff>=0.4",
-    "apdev[dev]>=0.1.6",
+    "apdev[dev]>=0.2.3",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -77,7 +77,7 @@ base_package = "django_apcore"
 src_dir = "src"
 
 [project.urls]
-Homepage = "https://github.com/aipartnerup/"
+Homepage = "https://aipartnerup.com"
 Repository = "https://github.com/aipartnerup/django-apcore"
 Documentation = "https://github.com/aipartnerup/django-apcore#readme"
 Issues = "https://github.com/aipartnerup/django-apcore/issues"
