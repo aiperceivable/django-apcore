@@ -18,7 +18,7 @@ DEFAULT_MODULE_DIR = "apcore_modules/"
 DEFAULT_AUTO_DISCOVER = True
 DEFAULT_SERVE_TRANSPORT = "stdio"
 DEFAULT_SERVE_HOST = "127.0.0.1"
-DEFAULT_SERVE_PORT = 8000
+DEFAULT_SERVE_PORT = 9090
 DEFAULT_SERVER_NAME = "apcore-mcp"
 DEFAULT_BINDING_PATTERN = "*.binding.yaml"
 
@@ -76,6 +76,8 @@ class ApcoreSettings:
     jwt_algorithm: str
     jwt_audience: str | None
     jwt_issuer: str | None
+    output_formatter: str | None
+    ai_enhance: bool
 
 
 def get_apcore_settings() -> ApcoreSettings:
@@ -481,6 +483,27 @@ def get_apcore_settings() -> ApcoreSettings:
             "APCORE_JWT_ISSUER must be a string." f" Got: {actual}"
         )
 
+    # --- Output formatter (apcore-mcp 0.10.0+) ---
+
+    output_formatter = getattr(settings, "APCORE_OUTPUT_FORMATTER", None)
+    if output_formatter is not None and not isinstance(output_formatter, str):
+        actual = type(output_formatter).__name__
+        raise ImproperlyConfigured(
+            "APCORE_OUTPUT_FORMATTER must be a string dotted path"
+            f" (e.g., 'apcore_toolkit.to_markdown'). Got: {actual}"
+        )
+
+    # --- AI enhancement (apcore-toolkit 0.2.0+) ---
+
+    ai_enhance = getattr(settings, "APCORE_AI_ENHANCE", False)
+    if ai_enhance is None:
+        ai_enhance = False
+    if not isinstance(ai_enhance, bool):
+        actual = type(ai_enhance).__name__
+        raise ImproperlyConfigured(
+            "APCORE_AI_ENHANCE must be a boolean." f" Got: {actual}"
+        )
+
     return ApcoreSettings(
         module_dir=module_dir,
         auto_discover=auto_discover,
@@ -519,6 +542,8 @@ def get_apcore_settings() -> ApcoreSettings:
         jwt_algorithm=jwt_algorithm,
         jwt_audience=jwt_audience,
         jwt_issuer=jwt_issuer,
+        output_formatter=output_formatter,
+        ai_enhance=ai_enhance,
     )
 
 

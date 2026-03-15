@@ -1,4 +1,4 @@
-"""Extension adapter layer for apcore v0.6.0.
+"""Extension adapter layer for apcore.
 
 Implements apcore protocols (Discoverer, ModuleValidator) with Django-specific
 logic, and provides setup_extensions() to build a configured ExtensionManager
@@ -7,11 +7,8 @@ from Django settings.
 
 from __future__ import annotations
 
-import contextlib
 import importlib
-import inspect
 import logging
-import typing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -89,75 +86,52 @@ class DjangoDiscoverer:
     def _adapt_view_module(fm: Any, function_module_cls: type) -> Any:
         """Wrap a Django view function so it can be called via MCP.
 
-        Django view functions (django-ninja, DRF) expect a ``request`` object
-        as their first parameter plus typed body/path parameters.  MCP calls
-        pass flat keyword arguments.  This method detects view functions and
-        creates a thin wrapper that:
+        Uses apcore-toolkit's ``flatten_pydantic_params`` to handle Pydantic
+        body parameters, and adds a thin wrapper that:
 
         1. Supplies a dummy ``HttpRequest`` for the ``request`` parameter.
-        2. Collects kwargs that belong to a Pydantic body model and
-           reconstructs it.
-        3. Passes remaining kwargs as path/query parameters.
-        4. Unwraps ``(status_code, data)`` tuple returns used by django-ninja.
+        2. Flattens Pydantic model kwargs via ``flatten_pydantic_params``.
+        3. Unwraps ``(status_code, data)`` tuple returns used by django-ninja.
         """
+        import inspect
+
         func = fm._func  # noqa: SLF001
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
 
         # Only adapt functions whose first parameter is 'request'
         if not params or params[0] != "request":
+            # Still apply Pydantic flattening for non-view functions
+            try:
+                from apcore_toolkit import flatten_pydantic_params
+
+                flattened = flatten_pydantic_params(func)
+                if flattened is not func:
+                    return function_module_cls(
+                        func=flattened,
+                        module_id=fm.module_id,
+                        description=fm.description,
+                        tags=fm.tags,
+                        version=fm.version,
+                        input_schema=fm.input_schema,
+                        output_schema=fm.output_schema,
+                    )
+            except ImportError:
+                pass
             return fm
 
-        # Resolve type hints to find Pydantic body parameters
-        hints: dict[str, Any] = {}
-        with contextlib.suppress(Exception):
-            hints = typing.get_type_hints(func)
+        # For view functions: strip 'request' param and flatten Pydantic models
+        from django_apcore.output.registry_writer import _adapt_view_func
 
-        from pydantic import BaseModel
+        adapted = _adapt_view_func(func)
 
-        body_param_name: str | None = None
-        body_model_cls: type[BaseModel] | None = None
-        for name in params[1:]:
-            hint = hints.get(name)
-            if (
-                hint is not None
-                and isinstance(hint, type)
-                and issubclass(hint, BaseModel)
-            ):
-                body_param_name = name
-                body_model_cls = hint
-                break
+        # Apply Pydantic flattening to the adapted function
+        try:
+            from apcore_toolkit import flatten_pydantic_params
 
-        # Capture in closure-safe locals
-        orig_func = func
-        bpn = body_param_name
-        bmc = body_model_cls
-
-        def adapted(**kwargs: Any) -> Any:
-            from django.test import RequestFactory
-
-            request = RequestFactory().get("/")
-
-            call_kwargs: dict[str, Any] = {}
-            if bmc is not None and bpn is not None:
-                body_fields = set(bmc.model_fields.keys())
-                body_data = {k: v for k, v in kwargs.items() if k in body_fields}
-                non_body = {k: v for k, v in kwargs.items() if k not in body_fields}
-                call_kwargs[bpn] = bmc(**body_data)
-                call_kwargs.update(non_body)
-            else:
-                call_kwargs = dict(kwargs)
-
-            result = orig_func(request, **call_kwargs)
-            # django-ninja views may return (status_code, data) tuples
-            if isinstance(result, tuple) and len(result) == 2:
-                return result[1]
-            return result
-
-        adapted.__name__ = func.__name__
-        adapted.__module__ = func.__module__
-        adapted.__doc__ = func.__doc__
-        adapted.__annotations__ = {"return": dict}
+            adapted = flatten_pydantic_params(adapted)
+        except ImportError:
+            pass
 
         return function_module_cls(
             func=adapted,
@@ -305,14 +279,7 @@ def setup_extensions(settings: ApcoreSettings) -> ExtensionManager:
 
 
 def _resolve_extra_validators(paths: list[str]) -> list[Any]:
-    """Import and instantiate extra module validator classes.
-
-    Args:
-        paths: List of dotted paths to validator classes.
-
-    Returns:
-        List of instantiated validator objects (skipping any that fail).
-    """
+    """Import and instantiate extra module validator classes."""
     validators = []
     for path in paths:
         v = _import_and_instantiate(path)
@@ -322,14 +289,7 @@ def _resolve_extra_validators(paths: list[str]) -> list[Any]:
 
 
 def _import_and_instantiate(dotted_path: str) -> Any | None:
-    """Import a class by dotted path and instantiate it with no arguments.
-
-    Args:
-        dotted_path: Fully-qualified dotted path, e.g. ``myapp.middleware.MyMW``.
-
-    Returns:
-        An instance of the class, or None if import/instantiation fails.
-    """
+    """Import a class by dotted path and instantiate it with no arguments."""
     try:
         module_path, class_name = dotted_path.rsplit(".", 1)
         mod = importlib.import_module(module_path)
@@ -341,15 +301,7 @@ def _import_and_instantiate(dotted_path: str) -> Any | None:
 
 
 def _build_span_exporter(config: bool | dict[str, Any]) -> Any | None:
-    """Build a span exporter from tracing configuration.
-
-    Args:
-        config: Either ``True`` (for stdout), or a dict with
-                ``exporter`` key specifying the type.
-
-    Returns:
-        A SpanExporter instance, or None if unavailable.
-    """
+    """Build a span exporter from tracing configuration."""
     try:
         if config is True:
             from apcore import StdoutExporter

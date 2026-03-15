@@ -10,20 +10,25 @@ The core philosophy is **scan, don't rewrite**: instead of manually defining MCP
 
 ## Key Features
 
+- **`DjangoApcore` unified entry point** — single class for all django-apcore functionality
 - **Auto-scan DRF endpoints** via drf-spectacular OpenAPI generation
 - **Auto-scan django-ninja endpoints** via built-in OpenAPI schema extraction
 - **Auto-resolve `$ref`** — Pydantic model schemas resolved from OpenAPI `$ref` references
+- **Annotation inference** — GET→readonly/cacheable, DELETE→destructive, PUT→idempotent
 - **Semantic module IDs** — action verbs from function names (`list`, `get`, `create`) instead of raw HTTP methods
-- **Generate YAML binding files** or **Python `@module` wrappers** from scanned endpoints
+- **Three output formats** — YAML bindings, Python `@module` wrappers, or direct registry registration
+- **Output verification** — validate generated files for syntax and structure
+- **AI enhancement** — auto-enhance module metadata via local SLMs (Ollama/vLLM)
 - **Serve as MCP tools** via apcore-mcp (stdio / streamable-http / SSE transports)
+- **Output formatting** — Markdown or custom formatters for LLM-friendly results
 - **Pluggable middleware pipeline** — logging, tracing, metrics, and custom middleware
 - **YAML-based access control (ACL)** for fine-grained module permissions
 - **Django context factory** — maps `request.user` to apcore `Identity` automatically
 - **Embedded MCP server mode** — start MCP server alongside Django on startup
 - **Include/exclude endpoint filtering** with regex patterns
 - **Export to OpenAI tool format** for non-MCP integrations
-- **Tool Explorer** — browser-based UI for browsing schemas and testing tools interactively (via apcore-mcp)
-- **Convenience shortcuts** — `executor_call`, `executor_call_async`, `executor_stream`, `report_progress`, `elicit`
+- **Tool Explorer** — browser-based UI for browsing schemas and testing tools interactively
+- **JWT authentication** — Bearer token auth on the MCP server
 
 ## How It Works
 
@@ -32,14 +37,14 @@ Django Endpoints (DRF / django-ninja)
         │
         ▼
    ┌─────────┐     ┌───────────────┐
-   │ Scanner  │────▶│ ScannedModule │
+   │ Scanner  │────▶│ ScannedModule │  ← annotations auto-inferred
    └─────────┘     └───────┬───────┘
                            │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-     YAML .binding files       Python @module files
-              │                         │
-              └────────────┬────────────┘
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+     YAML bindings   Python @module   Registry
+              │            │            │  (direct)
+              └────────────┴────────────┘
                            ▼
                     ┌──────────┐
                     │ Registry │
@@ -61,11 +66,6 @@ Django Endpoints (DRF / django-ninja)
                     AI Agent
 ```
 
-1. **Scan** — `apcore_scan` introspects your API framework and extracts endpoint metadata (schemas, descriptions, tags) into `ScannedModule` objects.
-2. **Generate** — Output writers produce YAML binding files or Python `@module` wrapper files.
-3. **Register** — On Django startup, `ApcoreAppConfig.ready()` auto-discovers binding files and `@module` functions, registering them with the apcore `Registry`.
-4. **Serve** — `apcore_serve` starts an MCP server (via apcore-mcp) that exposes all registered modules as MCP tools.
-
 ## Quick Start
 
 ### 1. Install
@@ -82,36 +82,144 @@ INSTALLED_APPS = [
     "django_apcore",
 ]
 
-# Optional: configure module directory and transport
 APCORE_MODULE_DIR = "apcore_modules/"
-APCORE_SERVE_TRANSPORT = "stdio"
 ```
 
 ### 3. Scan your endpoints
 
 ```bash
-# Scan django-ninja endpoints, output as YAML bindings
+# Generate YAML bindings from django-ninja routes
 python manage.py apcore_scan --source ninja --output yaml
 
-# Scan DRF endpoints, output as Python @module wrappers
-python manage.py apcore_scan --source drf --output python
+# Or register directly into the registry (no files)
+python manage.py apcore_scan --source ninja --output registry
 
-# Preview without writing files
+# Scan DRF endpoints
+python manage.py apcore_scan --source drf --output yaml
+
+# Preview without writing
 python manage.py apcore_scan --source ninja --dry-run
 
-# Filter endpoints with regex
+# Filter with regex
 python manage.py apcore_scan --source drf --include "users.*" --exclude "admin.*"
 ```
 
 ### 4. Serve as MCP tools
 
 ```bash
-# Start MCP server (stdio transport, default)
+# Start MCP server (stdio, default)
 python manage.py apcore_serve
 
-# Start with HTTP transport
-python manage.py apcore_serve --transport streamable-http --host 0.0.0.0 --port 9090
+# HTTP transport with explorer UI
+python manage.py apcore_serve --transport streamable-http --port 9090 --explorer
 ```
+
+## DjangoApcore — Unified Entry Point
+
+`DjangoApcore` is the recommended way to use django-apcore. It provides a single class for all functionality, following the same pattern as `apcore.APCore` and `apcore_mcp.APCoreMCP`.
+
+```python
+from django_apcore import DjangoApcore
+
+app = DjangoApcore()
+```
+
+### Register modules
+
+```python
+from apcore import ModuleAnnotations
+
+@app.module(
+    id="analytics.task_stats",
+    tags=["analytics"],
+    annotations=ModuleAnnotations(readonly=True, cacheable=True),
+)
+def task_stats() -> dict:
+    """Return summary statistics about all tasks."""
+    return {"total": 42, "done": 10, "pending": 32}
+```
+
+### Call modules from Django views
+
+```python
+from django.http import JsonResponse
+from django_apcore import DjangoApcore
+
+app = DjangoApcore()
+
+# Sync view — request auto-maps to apcore Identity
+def my_view(request):
+    result = app.call("analytics.task_stats", request=request)
+    return JsonResponse(result)
+
+# Async view
+async def my_async_view(request):
+    result = await app.call_async("analytics.task_stats", request=request)
+    return JsonResponse(result)
+
+# Streaming
+async def my_stream_view(request):
+    async for chunk in app.stream("ai.chat", {"prompt": "hello"}, request=request):
+        yield chunk
+
+# With cancellation timeout
+result = app.cancellable_call("slow.module", timeout=30, request=request)
+```
+
+### Scan, list, and describe
+
+```python
+# Scan endpoints programmatically
+modules = app.scan(source="ninja", include="users")
+
+# List registered modules
+ids = app.list_modules(tags=["analytics"])
+
+# Get module description (for LLM use)
+desc = app.describe("analytics.task_stats")
+```
+
+### Task management
+
+```python
+# Submit async task
+task_id = await app.submit_task("heavy.report", {"year": 2026})
+
+# Check status
+status = app.get_task_status(task_id)
+
+# Cancel
+await app.cancel_task(task_id)
+```
+
+### MCP serving and export
+
+```python
+# Start MCP server (blocking)
+app.serve(transport="streamable-http", port=9090, explorer=True)
+
+# Export as OpenAI tools
+tools = app.to_openai_tools(tags=["public"], strict=True)
+```
+
+### Singleton access
+
+```python
+# Process-wide singleton (for use across modules)
+app = DjangoApcore.get_instance()
+```
+
+### Properties
+
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `app.registry` | `Registry` | apcore Registry singleton |
+| `app.executor` | `Executor` | apcore Executor with extensions applied |
+| `app.extension_manager` | `ExtensionManager` | Extension point manager |
+| `app.context_factory` | `ContextFactory` | Django request → apcore Context |
+| `app.metrics_collector` | `MetricsCollector \| None` | Metrics (if enabled) |
+| `app.task_manager` | `AsyncTaskManager` | Async task manager |
+| `app.settings` | `ApcoreSettings` | Validated Django settings |
 
 ## Installation
 
@@ -136,8 +244,8 @@ pip install django-apcore[mcp]
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `django` | `>= 4.2` | Core framework |
-| `apcore` | `>= 0.6.0` | Protocol SDK |
-| `pydantic` | `>= 2.0` | Schema validation |
+| `apcore` | `>= 0.13.0` | Protocol SDK |
+| `apcore-toolkit` | `>= 0.2.0` | Scanner, writer, and formatting utilities |
 | `pyyaml` | `>= 6.0` | YAML binding files |
 
 ### Optional Dependencies
@@ -146,80 +254,110 @@ pip install django-apcore[mcp]
 |-------|---------|---------|---------|
 | `ninja` | `django-ninja` | `>= 1.0` | django-ninja endpoint scanning |
 | `drf` | `drf-spectacular` | `>= 0.27` | DRF endpoint scanning via OpenAPI |
-| `mcp` | `apcore-mcp` | `>= 0.7.0` | MCP server, transport layer, and JWT authentication |
+| `mcp` | `apcore-mcp` | `>= 0.10.0` | MCP server, transport layer, JWT auth, Tool Explorer |
 
 ## Configuration
 
 All settings are prefixed with `APCORE_` and read from Django's `settings.py`.
 
+### Core Settings
+
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `APCORE_MODULE_DIR` | `str` | `"apcore_modules/"` | Directory for YAML binding files and `@module` Python files |
 | `APCORE_AUTO_DISCOVER` | `bool` | `True` | Auto-discover bindings and `@module` functions on Django startup |
-| `APCORE_SERVE_TRANSPORT` | `str` | `"stdio"` | MCP transport: `"stdio"`, `"streamable-http"`, or `"sse"` |
-| `APCORE_SERVE_HOST` | `str` | `"127.0.0.1"` | Host for HTTP-based transports |
-| `APCORE_SERVE_PORT` | `int` | `8000` | Port for HTTP-based transports (1–65535) |
-| `APCORE_SERVER_NAME` | `str` | `"apcore-mcp"` | MCP server name (1–100 characters) |
-| `APCORE_SERVER_VERSION` | `str \| None` | `None` | Server version string |
 | `APCORE_BINDING_PATTERN` | `str` | `"*.binding.yaml"` | Glob pattern for discovering YAML binding files |
-| `APCORE_MIDDLEWARES` | `list[str]` | `[]` | Dotted paths to middleware classes |
-| `APCORE_ACL_PATH` | `str \| None` | `None` | Path to YAML ACL file for access control |
 | `APCORE_CONTEXT_FACTORY` | `str \| None` | `None` | Dotted path to custom ContextFactory class |
 | `APCORE_EXECUTOR_CONFIG` | `dict \| None` | `None` | Additional executor configuration dict |
-| `APCORE_VALIDATE_INPUTS` | `bool` | `False` | Enable input validation at the MCP layer |
-| `APCORE_OBSERVABILITY_LOGGING` | `bool \| dict \| None` | `None` | Enable observability logging middleware |
-| `APCORE_TRACING` | `bool \| dict \| None` | `None` | Enable tracing middleware (stdout, in_memory, otlp) |
-| `APCORE_METRICS` | `bool \| dict \| None` | `None` | Enable metrics collection middleware |
-| `APCORE_EMBEDDED_SERVER` | `bool \| dict \| None` | `None` | Start an embedded MCP server on Django startup |
-| `APCORE_EXPLORER_ENABLED` | `bool` | `False` | Enable the browser-based Tool Explorer UI on the MCP server |
+| `APCORE_VALIDATE_INPUTS` | `bool` | `False` | Enable input validation at the executor layer |
+
+### MCP Server Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_SERVE_TRANSPORT` | `str` | `"stdio"` | MCP transport: `"stdio"`, `"streamable-http"`, or `"sse"` |
+| `APCORE_SERVE_HOST` | `str` | `"127.0.0.1"` | Host for HTTP-based transports |
+| `APCORE_SERVE_PORT` | `int` | `9090` | Port for HTTP-based transports (1–65535) |
+| `APCORE_SERVER_NAME` | `str` | `"apcore-mcp"` | MCP server name (1–100 characters) |
+| `APCORE_SERVER_VERSION` | `str \| None` | `None` | Server version string |
+| `APCORE_OUTPUT_FORMATTER` | `str \| None` | `None` | Dotted path to output formatter (e.g., `"apcore_toolkit.to_markdown"`) |
+
+### Extension Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_MIDDLEWARES` | `list[str]` | `[]` | Dotted paths to middleware classes |
+| `APCORE_ACL_PATH` | `str \| None` | `None` | Path to YAML ACL file for access control |
+| `APCORE_MODULE_VALIDATORS` | `list[str]` | `[]` | Dotted paths to extra module validator classes |
+
+### Explorer Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_EXPLORER_ENABLED` | `bool` | `False` | Enable the browser-based Tool Explorer UI |
 | `APCORE_EXPLORER_PREFIX` | `str` | `"/explorer"` | URL prefix for the explorer UI |
 | `APCORE_EXPLORER_ALLOW_EXECUTE` | `bool` | `False` | Allow tool execution from the explorer UI |
-| `APCORE_JWT_SECRET` | `str \| None` | `None` | JWT secret/key. When set, enables JWT authentication on the MCP server |
+
+### JWT Authentication Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_JWT_SECRET` | `str \| None` | `None` | JWT secret/key. Enables JWT auth when set |
 | `APCORE_JWT_ALGORITHM` | `str` | `"HS256"` | JWT algorithm (e.g., `HS256`, `RS256`) |
 | `APCORE_JWT_AUDIENCE` | `str \| None` | `None` | Expected JWT `aud` claim |
 | `APCORE_JWT_ISSUER` | `str \| None` | `None` | Expected JWT `iss` claim |
 
-### Observability Logging Options
+### AI Enhancement Settings
 
-When `APCORE_OBSERVABILITY_LOGGING` is a dict:
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_AI_ENHANCE` | `bool` | `False` | Enable AI enhancement in `apcore_scan` |
+
+AI enhancement also requires the `APCORE_AI_ENABLED=true` environment variable and a running SLM (Ollama/vLLM). See [apcore-toolkit](https://github.com/aipartnerup/apcore-toolkit-python) for configuration.
+
+### Observability Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_OBSERVABILITY_LOGGING` | `bool \| dict \| None` | `None` | Enable observability logging middleware |
+| `APCORE_TRACING` | `bool \| dict \| None` | `None` | Enable tracing (stdout, in_memory, otlp) |
+| `APCORE_METRICS` | `bool \| dict \| None` | `None` | Enable metrics collection |
+
+<details>
+<summary>Observability dict options</summary>
 
 ```python
+# Logging
 APCORE_OBSERVABILITY_LOGGING = {
-    "log_inputs": True,       # Log module inputs
-    "log_outputs": True,      # Log module outputs
+    "log_inputs": True,
+    "log_outputs": True,
     "level": "info",          # trace, debug, info, warn, error, fatal
-    "format": "json",         # Log format
-    "redact_sensitive": True,  # Redact sensitive data
+    "format": "json",
+    "redact_sensitive": True,
 }
-```
 
-### Tracing Options
-
-When `APCORE_TRACING` is a dict:
-
-```python
+# Tracing
 APCORE_TRACING = {
-    "exporter": "otlp",              # stdout, in_memory, otlp, or dotted path
+    "exporter": "otlp",              # stdout, in_memory, otlp
     "sampling_rate": 0.1,            # 0.0 to 1.0
     "sampling_strategy": "full",     # full, proportional, error_first, off
     "otlp_endpoint": "http://localhost:4318",
     "otlp_service_name": "my-django-app",
 }
-```
 
-### Metrics Options
-
-When `APCORE_METRICS` is a dict:
-
-```python
+# Metrics
 APCORE_METRICS = {
     "buckets": [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 }
 ```
 
-### Embedded Server Options
+</details>
 
-When `APCORE_EMBEDDED_SERVER` is a dict:
+### Embedded Server Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_EMBEDDED_SERVER` | `bool \| dict \| None` | `None` | Start an embedded MCP server on Django startup |
 
 ```python
 APCORE_EMBEDDED_SERVER = {
@@ -227,59 +365,17 @@ APCORE_EMBEDDED_SERVER = {
     "host": "127.0.0.1",
     "port": 9090,
     "name": "embedded-mcp",
-    "version": "1.0.0",
 }
 ```
 
-### Tool Explorer
+### Task & Cancellation Settings
 
-The Tool Explorer is a browser-based UI provided by [apcore-mcp](https://github.com/aipartnerup/apcore-mcp-python) for browsing tool schemas and testing tool execution interactively. It runs on the MCP server port (not the Django port).
-
-```python
-# settings.py
-APCORE_EXPLORER_ENABLED = True          # enable explorer UI
-APCORE_EXPLORER_ALLOW_EXECUTE = True    # allow Try-it execution
-# APCORE_EXPLORER_PREFIX = "/explorer"  # default prefix
-```
-
-Or via CLI flags:
-
-```bash
-python manage.py apcore_serve --transport streamable-http --explorer --allow-execute
-# Open http://127.0.0.1:8000/explorer/ in a browser
-```
-
-**Endpoints** (served by apcore-mcp on the MCP port):
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /explorer/` | Interactive HTML page (self-contained, no external dependencies) |
-| `GET /explorer/tools` | JSON array of all tools with name, description, annotations |
-| `GET /explorer/tools/<name>` | Full tool detail with inputSchema |
-| `POST /explorer/tools/<name>/call` | Execute a tool (requires `allow_execute=True`) |
-
-- **HTTP transports only** (`streamable-http`, `sse`). Silently ignored for `stdio`.
-- **Execution disabled by default** — set `APCORE_EXPLORER_ALLOW_EXECUTE = True` or `--allow-execute` to enable.
-- **No auth** — do NOT enable in production without a reverse proxy.
-
-### JWT Authentication
-
-Enable JWT-based authentication on the MCP server (requires apcore-mcp >= 0.7.0). When configured, clients must send a valid `Authorization: Bearer <token>` header. The JWT `sub` claim is mapped to an apcore `Identity`.
-
-```python
-# settings.py
-APCORE_JWT_SECRET = "your-secret-key"
-APCORE_JWT_ALGORITHM = "HS256"       # default
-APCORE_JWT_AUDIENCE = "my-api"       # optional
-APCORE_JWT_ISSUER = "my-issuer"      # optional
-```
-
-Or via CLI flags:
-
-```bash
-python manage.py apcore_serve --transport streamable-http --jwt-secret "your-secret-key"
-python manage.py apcore_serve --jwt-secret "key" --jwt-algorithm RS256 --jwt-audience my-api
-```
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `APCORE_TASK_MAX_CONCURRENT` | `int` | `10` | Max concurrent async tasks |
+| `APCORE_TASK_MAX_TASKS` | `int` | `1000` | Max total tasks in queue |
+| `APCORE_TASK_CLEANUP_AGE` | `int` | `3600` | Seconds before completed tasks are cleaned up |
+| `APCORE_CANCEL_DEFAULT_TIMEOUT` | `int \| None` | `None` | Default cancellation timeout (seconds) |
 
 ## Management Commands
 
@@ -294,11 +390,13 @@ python manage.py apcore_scan --source <ninja|drf> [options]
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--source` | `-s` | **Required.** Scanner source: `ninja` or `drf` |
-| `--output` | `-o` | Output format: `yaml` (default) or `python` |
+| `--output` | `-o` | Output format: `yaml` (default), `python`, or `registry` |
 | `--dir` | `-d` | Output directory (default: `APCORE_MODULE_DIR`) |
 | `--dry-run` | | Preview output without writing files |
+| `--verify` | | Verify written output files (YAML validity, Python syntax) |
 | `--include` | | Regex pattern to include endpoints |
 | `--exclude` | | Regex pattern to exclude endpoints |
+| `--ai-enhance` | | Enhance module metadata via local SLM |
 
 ### `apcore_serve`
 
@@ -318,11 +416,12 @@ python manage.py apcore_serve [options]
 | `--explorer` | | Enable the browser-based Tool Explorer UI (HTTP only) |
 | `--explorer-prefix` | | URL prefix for the explorer UI (default: `/explorer`) |
 | `--allow-execute` | | Allow tool execution from the explorer UI |
-| `--validate-inputs` | | Enable input validation on the MCP server |
+| `--validate-inputs` | | Enable input validation |
 | `--metrics` | | Enable Prometheus `/metrics` endpoint |
-| `--log-level` | | MCP server log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+| `--log-level` | | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 | `--tags` | | Filter modules by tags (comma-separated) |
 | `--prefix` | | Filter modules by ID prefix |
+| `--output-formatter` | | Dotted path to output formatter (e.g., `apcore_toolkit.to_markdown`) |
 | `--jwt-secret` | | JWT secret/key for authentication |
 | `--jwt-algorithm` | | JWT algorithm (default: `HS256`) |
 | `--jwt-audience` | | Expected JWT `aud` claim |
@@ -330,7 +429,7 @@ python manage.py apcore_serve [options]
 
 ### `apcore_export`
 
-Export registered modules to external tool formats.
+Export registered modules to OpenAI tool format.
 
 ```bash
 python manage.py apcore_export [options]
@@ -344,58 +443,37 @@ python manage.py apcore_export [options]
 | `--tags` | Filter by tags (space-separated) |
 | `--prefix` | Prefix for tool names |
 
-## Shortcuts
+### `apcore_tasks`
 
-Convenience functions for calling apcore modules from Django views without manually wiring together the registry, executor, and context factory.
+Manage async tasks.
+
+```bash
+python manage.py apcore_tasks <list|cancel|cleanup> [options]
+```
+
+## Legacy API (Shortcuts)
+
+For projects not using `DjangoApcore`, the function-based shortcuts are still available:
 
 ```python
 from django_apcore.shortcuts import (
-    executor_call,
-    executor_call_async,
-    executor_stream,
-    report_progress,
-    elicit,
+    executor_call,          # sync call
+    executor_call_async,    # async call
+    executor_stream,        # streaming
+    cancellable_call,       # call with CancelToken
+    cancellable_call_async, # async cancellable
+    submit_task,            # submit async task
+    get_task_status,        # query task status
+    cancel_task,            # cancel task
+    report_progress,        # MCP progress
+    elicit,                 # MCP user input
 )
-```
 
-### `executor_call(module_id, inputs, *, request, context)`
-
-Execute an apcore module synchronously.
-
-```python
-# In a Django view
+# Example
 def my_view(request):
     result = executor_call("users.list", {"page": 1}, request=request)
     return JsonResponse(result)
 ```
-
-### `executor_call_async(module_id, inputs, *, request, context)`
-
-Execute an apcore module asynchronously.
-
-```python
-async def my_async_view(request):
-    result = await executor_call_async("users.create", {"name": "Alice"}, request=request)
-    return JsonResponse(result)
-```
-
-### `executor_stream(module_id, inputs, *, request, context)`
-
-Stream an apcore module's output asynchronously.
-
-```python
-async def my_streaming_view(request):
-    async for chunk in executor_stream("reports.generate", {"id": 42}, request=request):
-        yield chunk
-```
-
-### `report_progress(context, progress, total, message)`
-
-Report execution progress to the MCP client. No-ops when apcore-mcp is not installed.
-
-### `elicit(context, message, requested_schema)`
-
-Ask the MCP client for user input via elicitation. Returns `None` when apcore-mcp is not installed.
 
 ## Comparison with Other MCP Solutions
 
@@ -404,121 +482,42 @@ Ask the MCP client for user input via elicitation. Returns `None` when apcore-mc
 | **Approach** | Scan existing endpoints | Define new tools | Define new tools | Scan ninja endpoints | Define new tools | Scan FastAPI endpoints |
 | **DRF support** | Yes (via drf-spectacular) | Yes (opt-in decorators) | No | No | No (not Django) | No (FastAPI only) |
 | **django-ninja support** | Yes | No | No | Yes | No (not Django) | No (FastAPI only) |
+| **Unified client class** | `DjangoApcore` | No | No | No | No | No |
 | **Schema source** | Auto from OpenAPI | Model/serializer introspection | Manual | Auto from OpenAPI | Manual | Auto from OpenAPI |
 | **Transport: stdio** | Yes | Yes | No | No | Yes | No |
 | **Transport: streamable-http** | Yes | Yes | No | No | Yes | Yes |
 | **Transport: SSE** | Yes | No | Yes | Yes | Yes | Yes |
+| **Annotation inference** | Yes | No | No | No | No | No |
+| **Output verification** | Yes | No | No | No | No | No |
+| **AI enhancement** | Yes | No | No | No | No | No |
 | **Tracing (OpenTelemetry)** | Yes | No | No | No | Yes | No |
 | **Metrics collection** | Yes | No | No | No | No | No |
-| **Observability logging** | Yes | No | No | No | Yes | No |
 | **Middleware pipeline** | Yes | No | No | No | Yes | No |
 | **YAML-based ACL** | Yes | No | No | No | No | No |
 | **Identity mapping** | Yes (Django User) | DRF auth classes | No | No | Per-component auth | FastAPI Depends() |
-| **Embedded server mode** | Yes | No | No | No | No | Yes |
-| **Output: YAML bindings** | Yes | N/A | N/A | No | N/A | N/A |
-| **Output: Python @module** | Yes | N/A | N/A | No | N/A | N/A |
 | **Export to OpenAI tools** | Yes | No | No | No | No | No |
-| **Django framework** | Yes | Yes | Yes | Yes | No | No |
-
-### Key Differentiators
-
-- **Scan, don't rewrite** — django-apcore scans your existing API endpoints and generates module definitions automatically. No need to duplicate endpoint logic as MCP tool definitions.
-- **Dual framework support** — First-class support for both DRF (via drf-spectacular) and django-ninja in a single package.
-- **Full observability stack** — Built-in logging, OpenTelemetry tracing (stdout / in-memory / OTLP exporters), and metrics collection via pluggable middleware.
-- **YAML-based ACL** — Declarative access control without code changes.
-- **Django-native identity** — Automatically maps `request.user` (including groups, staff/superuser status) to apcore `Identity` for ACL evaluation.
+| **JWT authentication** | Yes | No | No | No | No | No |
 
 ## Demo Project
 
-The `example/` directory contains a Task Manager API demo showcasing django-apcore's core features: django-ninja route scanning, `@module` decorator, MCP server with Tool Explorer, and observability.
-
-### Run with Docker
+The `example/` directory contains a Task Manager API demo showcasing all major features.
 
 ```bash
 cd example
 docker compose up --build
 ```
 
-This starts two services:
-
 | Service | URL | Description |
 |---------|-----|-------------|
 | `web` | http://localhost:8000 | Django API server (django-ninja) |
-| `mcp` | http://localhost:9090 | MCP server (`apcore_serve`, streamable-http) |
+| `mcp` | http://localhost:9090 | MCP server with Tool Explorer |
 
-### Registered Modules
-
-| Module ID | Target | Description |
-|-----------|--------|-------------|
-| `task_stats.v1` | `task_stats()` | Return summary statistics about all tasks |
-| `api.tasks.list` | `list_tasks()` | List all tasks |
-| `api.tasks.get` | `get_task(task_id)` | Get a task by its ID |
-| `api.tasks.create` | `create_task(body)` | Create a new task |
-| `api.tasks.update` | `update_task(task_id, body)` | Update an existing task |
-| `api.tasks.delete` | `delete_task(task_id)` | Delete a task permanently |
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/tasks` | List all tasks |
-| POST | `/api/tasks` | Create a new task |
-| GET | `/api/tasks/{task_id}` | Get a task by ID |
-| PUT | `/api/tasks/{task_id}` | Update a task |
-| DELETE | `/api/tasks/{task_id}` | Delete a task |
-
-### Try It
-
-```bash
-# List tasks
-curl http://localhost:8000/api/tasks
-
-# Create a task
-curl -X POST http://localhost:8000/api/tasks \
-  -H 'Content-Type: application/json' \
-  -d '{"title": "Buy milk", "description": "From the store"}'
-
-# Get a task by ID
-curl http://localhost:8000/api/tasks/1
-
-# Update a task
-curl -X PUT http://localhost:8000/api/tasks/1 \
-  -H 'Content-Type: application/json' \
-  -d '{"done": true}'
-
-# Delete a task
-curl -X DELETE http://localhost:8000/api/tasks/2
-```
-
-### Connect an AI Agent
-
-The MCP server on port 9090 uses the `streamable-http` transport. Point any MCP-compatible AI agent to `http://localhost:9090` to discover and invoke the registered modules as tools.
-
-### Demo Project Structure
-
-```
-example/
-├── Dockerfile              # Python 3.11 image with django-apcore
-├── docker-compose.yml      # web + mcp services
-├── entrypoint.sh           # scan → serve pipeline
-├── manage.py
-├── conftest.py             # pytest-django configuration
-├── demo/
-│   ├── settings.py         # Django settings with apcore config
-│   ├── urls.py             # API route (django-ninja)
-│   ├── api.py              # Task Manager CRUD with Pydantic schemas
-│   └── apcore_modules/
-│       ├── __init__.py     # Re-exports for auto-discovery
-│       ├── task_stats.py   # @module "task_stats.v1"
-│       └── *.binding.yaml  # Auto-generated YAML bindings for scanned routes
-└── tests/
-    └── test_demo.py        # Unit + integration tests
-```
+See [`example/README.md`](example/README.md) for full setup instructions and `DjangoApcore` usage examples.
 
 ## Requirements
 
 - Python 3.11+
-- Django 4.2+ (including 5.0 and 5.1)
+- Django 4.2+ (including 5.0, 5.1, 6.0)
 
 ## License
 

@@ -39,6 +39,66 @@ def _reset_store():
 
 
 # ---------------------------------------------------------------------------
+# DjangoApcore unified entry point tests
+# ---------------------------------------------------------------------------
+
+
+class TestDjangoApcoreEntryPoint:
+    """Test the DjangoApcore unified class in the demo context."""
+
+    def test_import(self):
+        from django_apcore import DjangoApcore
+
+        app = DjangoApcore()
+        assert app is not None
+
+    def test_singleton(self):
+        from django_apcore import DjangoApcore
+
+        DjangoApcore._reset_instance()
+        try:
+            a = DjangoApcore.get_instance()
+            b = DjangoApcore.get_instance()
+            assert a is b
+        finally:
+            DjangoApcore._reset_instance()
+
+    def test_settings_accessible(self):
+        from django_apcore import DjangoApcore
+
+        app = DjangoApcore()
+        assert app.settings.server_name == "task-manager-mcp"
+        assert app.settings.serve_port == 9090
+
+    def test_scan_ninja(self):
+        from django_apcore import DjangoApcore
+
+        app = DjangoApcore()
+        modules = app.scan(source="ninja")
+        ids = [m.module_id for m in modules]
+        assert len(ids) >= 5
+        # Verify annotations are inferred
+        for m in modules:
+            assert m.annotations is not None
+
+    def test_scan_with_include_filter(self):
+        from django_apcore import DjangoApcore
+
+        app = DjangoApcore()
+        modules = app.scan(source="ninja", include=r"tasks")
+        assert len(modules) >= 1
+        assert all("tasks" in m.module_id for m in modules)
+
+    def test_scan_with_exclude_filter(self):
+        from django_apcore import DjangoApcore
+
+        app = DjangoApcore()
+        all_modules = app.scan(source="ninja")
+        filtered = app.scan(source="ninja", exclude=r"_2$")
+        assert len(filtered) < len(all_modules)
+
+
+# ---------------------------------------------------------------------------
 # Module function unit tests
 # ---------------------------------------------------------------------------
 
@@ -209,14 +269,10 @@ class TestModuleDiscovery:
 
         assert mod is not None
 
-    def test_one_decorated_function(self):
-        import demo.apcore_modules as mod
+    def test_task_stats_module_registered(self):
+        """task_stats.v1 is self-registering via @app.module() decorator."""
+        from demo.apcore_modules.task_stats import task_stats
 
-        decorated = [
-            name
-            for name in dir(mod)
-            if callable(getattr(mod, name))
-            and hasattr(getattr(mod, name), "apcore_module")
-        ]
-        assert len(decorated) == 1
-        assert set(decorated) == {"task_stats"}
+        assert callable(task_stats)
+        assert hasattr(task_stats, "apcore_module")
+        assert task_stats.apcore_module.module_id == "task_stats.v1"

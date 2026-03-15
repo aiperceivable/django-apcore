@@ -1,14 +1,22 @@
 # tests/test_scanner_base.py
+"""Tests for base scanner interface and ScannedModule re-exports.
+
+Verifies that django_apcore.scanners.base properly re-exports
+BaseScanner and ScannedModule from apcore-toolkit, and that the
+OpenAPI utilities are accessible.
+"""
+
 from dataclasses import fields
 
 import pytest
+from apcore import ModuleAnnotations
 
 
 class TestScannedModule:
-    """Test the ScannedModule dataclass."""
+    """Test the ScannedModule dataclass (from apcore-toolkit)."""
 
     def test_required_fields_exist(self):
-        """ScannedModule has all required fields from tech-design."""
+        """ScannedModule has all required fields."""
         from django_apcore.scanners.base import ScannedModule
 
         field_names = {f.name for f in fields(ScannedModule)}
@@ -22,6 +30,9 @@ class TestScannedModule:
             "version",
             "warnings",
             "annotations",
+            "documentation",
+            "examples",
+            "metadata",
         }
         assert expected == field_names
 
@@ -71,7 +82,7 @@ class TestScannedModule:
         assert module.warnings == []
 
     def test_annotations_field_exists(self):
-        """ScannedModule has an annotations field."""
+        """ScannedModule has an annotations field accepting ModuleAnnotations."""
         from django_apcore.scanners.base import ScannedModule
 
         module = ScannedModule(
@@ -81,9 +92,10 @@ class TestScannedModule:
             output_schema={},
             tags=[],
             target="mod:func",
-            annotations={"deprecated": True},
+            annotations=ModuleAnnotations(readonly=True),
         )
-        assert module.annotations == {"deprecated": True}
+        assert module.annotations is not None
+        assert module.annotations.readonly is True
 
     def test_annotations_default_is_none(self):
         """ScannedModule defaults annotations to None."""
@@ -122,6 +134,36 @@ class TestScannedModule:
         m1.warnings.append("warning1")
         assert m2.warnings == []
 
+    def test_documentation_field(self):
+        """ScannedModule supports documentation field."""
+        from django_apcore.scanners.base import ScannedModule
+
+        module = ScannedModule(
+            module_id="test",
+            description="test",
+            input_schema={},
+            output_schema={},
+            tags=[],
+            target="mod:func",
+            documentation="Full docstring here.",
+        )
+        assert module.documentation == "Full docstring here."
+
+    def test_metadata_field(self):
+        """ScannedModule supports metadata field."""
+        from django_apcore.scanners.base import ScannedModule
+
+        module = ScannedModule(
+            module_id="test",
+            description="test",
+            input_schema={},
+            output_schema={},
+            tags=[],
+            target="mod:func",
+            metadata={"http_method": "GET", "url_path": "/api/test"},
+        )
+        assert module.metadata["http_method"] == "GET"
+
 
 class TestBaseScannerABC:
     """Test that BaseScanner enforces the abstract interface."""
@@ -149,7 +191,7 @@ class TestBaseScannerABC:
         from django_apcore.scanners.base import BaseScanner
 
         class IncompleteScanner(BaseScanner):
-            def scan(self, include=None, exclude=None):
+            def scan(self, **kwargs):
                 return []
 
         with pytest.raises(TypeError, match="abstract method"):
@@ -160,7 +202,7 @@ class TestBaseScannerABC:
         from django_apcore.scanners.base import BaseScanner
 
         class ConcreteScanner(BaseScanner):
-            def scan(self, include=None, exclude=None):
+            def scan(self, **kwargs):
                 return []
 
             def get_source_name(self) -> str:
@@ -170,6 +212,23 @@ class TestBaseScannerABC:
         assert scanner.get_source_name() == "concrete"
         assert scanner.scan() == []
 
+    def test_infer_annotations_from_method(self):
+        """infer_annotations_from_method returns correct annotations."""
+        from django_apcore.scanners.base import BaseScanner
+
+        get_ann = BaseScanner.infer_annotations_from_method("GET")
+        assert get_ann.readonly is True
+        assert get_ann.cacheable is True
+
+        del_ann = BaseScanner.infer_annotations_from_method("DELETE")
+        assert del_ann.destructive is True
+
+        put_ann = BaseScanner.infer_annotations_from_method("PUT")
+        assert put_ann.idempotent is True
+
+        post_ann = BaseScanner.infer_annotations_from_method("POST")
+        assert post_ann.readonly is False
+
 
 class TestFilterModules:
     """Test the include/exclude filtering utility."""
@@ -178,7 +237,9 @@ class TestFilterModules:
         from django_apcore.scanners.base import BaseScanner, ScannedModule
 
         class TestScanner(BaseScanner):
-            def scan(self, include=None, exclude=None):
+            def scan(self, **kwargs):
+                include = kwargs.get("include")
+                exclude = kwargs.get("exclude")
                 modules = [
                     ScannedModule(
                         module_id="api.v1.users.list",
@@ -241,24 +302,12 @@ class TestFilterModules:
         assert len(result) == 0
 
 
-class TestResolveRef:
-    """Test $ref resolution helpers on BaseScanner."""
-
-    def _make_scanner(self):
-        from django_apcore.scanners.base import BaseScanner
-
-        class ConcreteScanner(BaseScanner):
-            def scan(self, include=None, exclude=None):
-                return []
-
-            def get_source_name(self) -> str:
-                return "test"
-
-        return ConcreteScanner()
+class TestOpenAPIUtils:
+    """Test OpenAPI utility functions re-exported from apcore-toolkit."""
 
     def test_resolve_ref_simple(self):
         """Resolves #/components/schemas/Foo to the correct dict."""
-        from django_apcore.scanners.base import BaseScanner
+        from django_apcore.scanners.base import resolve_ref
 
         openapi_doc = {
             "components": {
@@ -271,30 +320,28 @@ class TestResolveRef:
                 }
             }
         }
-        result = BaseScanner._resolve_ref("#/components/schemas/Foo", openapi_doc)
+        result = resolve_ref("#/components/schemas/Foo", openapi_doc)
         assert result == openapi_doc["components"]["schemas"]["Foo"]
         assert "name" in result["properties"]
 
     def test_resolve_ref_missing(self):
         """Returns {} for a broken ref path."""
-        from django_apcore.scanners.base import BaseScanner
+        from django_apcore.scanners.base import resolve_ref
 
         openapi_doc = {"components": {"schemas": {}}}
-        result = BaseScanner._resolve_ref("#/components/schemas/Missing", openapi_doc)
+        result = resolve_ref("#/components/schemas/Missing", openapi_doc)
         assert result == {}
 
     def test_resolve_ref_non_local(self):
         """Returns {} for an external (non-local) ref."""
-        from django_apcore.scanners.base import BaseScanner
+        from django_apcore.scanners.base import resolve_ref
 
-        result = BaseScanner._resolve_ref(
-            "https://example.com/schema.json", {"components": {}}
-        )
+        result = resolve_ref("https://example.com/schema.json", {"components": {}})
         assert result == {}
 
     def test_resolve_schema_with_ref(self):
-        """_resolve_schema resolves a $ref schema."""
-        from django_apcore.scanners.base import BaseScanner
+        """resolve_schema resolves a $ref schema."""
+        from django_apcore.scanners.base import resolve_schema
 
         openapi_doc = {
             "components": {
@@ -307,21 +354,22 @@ class TestResolveRef:
             }
         }
         schema = {"$ref": "#/components/schemas/Bar"}
-        result = BaseScanner._resolve_schema(schema, openapi_doc)
+        result = resolve_schema(schema, openapi_doc)
         assert result["type"] == "object"
         assert "id" in result["properties"]
 
     def test_resolve_schema_without_ref(self):
-        """_resolve_schema returns the schema as-is when no $ref."""
-        from django_apcore.scanners.base import BaseScanner
+        """resolve_schema returns the schema as-is when no $ref."""
+        from django_apcore.scanners.base import resolve_schema
 
         schema = {"type": "object", "properties": {"x": {"type": "string"}}}
-        result = BaseScanner._resolve_schema(schema, None)
+        result = resolve_schema(schema, None)
         assert result is schema
 
     def test_extract_input_schema_with_ref(self):
         """requestBody with $ref is resolved to actual properties."""
-        scanner = self._make_scanner()
+        from django_apcore.scanners.base import extract_input_schema
+
         openapi_doc = {
             "components": {
                 "schemas": {
@@ -345,14 +393,15 @@ class TestResolveRef:
                 }
             }
         }
-        result = scanner._extract_input_schema(operation, openapi_doc)
+        result = extract_input_schema(operation, openapi_doc)
         assert "title" in result["properties"]
         assert "done" in result["properties"]
         assert "title" in result["required"]
 
     def test_extract_output_schema_with_ref(self):
         """Response schema with $ref is resolved to actual properties."""
-        scanner = self._make_scanner()
+        from django_apcore.scanners.base import extract_output_schema
+
         openapi_doc = {
             "components": {
                 "schemas": {
@@ -377,14 +426,15 @@ class TestResolveRef:
                 }
             }
         }
-        result = scanner._extract_output_schema(operation, openapi_doc)
+        result = extract_output_schema(operation, openapi_doc)
         assert result["type"] == "object"
         assert "id" in result["properties"]
         assert "title" in result["properties"]
 
     def test_extract_output_schema_array_with_ref_items(self):
         """Array response with $ref items is resolved."""
-        scanner = self._make_scanner()
+        from django_apcore.scanners.base import extract_output_schema
+
         openapi_doc = {
             "components": {
                 "schemas": {
@@ -409,7 +459,7 @@ class TestResolveRef:
                 }
             }
         }
-        result = scanner._extract_output_schema(operation, openapi_doc)
+        result = extract_output_schema(operation, openapi_doc)
         assert result["type"] == "array"
         assert result["items"]["type"] == "object"
         assert "id" in result["items"]["properties"]

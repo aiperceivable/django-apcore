@@ -45,7 +45,7 @@ class TestEmbeddedServer:
         call_kwargs = mock_server_cls.call_args.kwargs
         assert call_kwargs["transport"] == "stdio"
         assert call_kwargs["host"] == "127.0.0.1"
-        assert call_kwargs["port"] == 8000
+        assert call_kwargs["port"] == 9090
         assert call_kwargs["name"] == "apcore-mcp"
 
     @override_settings(

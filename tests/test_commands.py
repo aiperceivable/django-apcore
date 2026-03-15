@@ -14,6 +14,16 @@ SCAN_CMD = "django_apcore.management.commands.apcore_scan"
 TASKS_CMD = "django_apcore.management.commands.apcore_tasks"
 
 
+def _make_write_result(module_id="test", path=None, verified=True):
+    """Create a mock WriteResult-like object."""
+    result = MagicMock()
+    result.module_id = module_id
+    result.path = path
+    result.verified = verified
+    result.verification_error = None
+    return result
+
+
 class TestApCoreScanCommand:
     """Test the apcore_scan management command."""
 
@@ -91,6 +101,37 @@ class TestApCoreScanCommand:
 
             call_command("apcore_scan", "--source", "ninja", "--output", "python")
             mock_writer_get.assert_called_once_with("python")
+
+    def test_output_registry_accepted(self):
+        """--output registry is a valid choice."""
+        with (
+            patch(f"{SCAN_CMD}.get_scanner") as mock_get,
+            patch(f"{SCAN_CMD}.get_apcore_settings") as mock_settings,
+            patch("django_apcore.registry.get_registry") as mock_reg,
+            patch(
+                "django_apcore.output.registry_writer.DjangoRegistryWriter.write"
+            ) as mock_write,
+        ):
+            mock_settings.return_value = MagicMock(
+                module_dir="apcore_modules/", ai_enhance=False
+            )
+            mock_scanner = MagicMock()
+            mock_scanner.scan.return_value = []
+            mock_scanner.get_source_name.return_value = "test"
+            mock_get.return_value = mock_scanner
+
+            mock_write.return_value = []
+            mock_reg.return_value = MagicMock()
+
+            out = StringIO()
+            call_command(
+                "apcore_scan",
+                "--source",
+                "ninja",
+                "--output",
+                "registry",
+                stdout=out,
+            )
 
     def test_output_invalid_rejected(self):
         """Invalid --output values are rejected."""
@@ -210,7 +251,9 @@ class TestApCoreScanCommand:
             patch(f"{SCAN_CMD}.get_writer") as mock_writer_get,
             patch(f"{SCAN_CMD}.get_apcore_settings") as mock_settings,
         ):
-            mock_settings.return_value = MagicMock(module_dir="custom_dir/")
+            mock_settings.return_value = MagicMock(
+                module_dir="custom_dir/", ai_enhance=False
+            )
 
             mock_scanner = MagicMock()
             mock_scanner.scan.return_value = []

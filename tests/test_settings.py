@@ -35,7 +35,7 @@ class TestApcoreSettingsDefaults:
         from django_apcore.settings import get_apcore_settings
 
         settings = get_apcore_settings()
-        assert settings.serve_port == 8000
+        assert settings.serve_port == 9090
 
     def test_default_server_name(self):
         from django_apcore.settings import get_apcore_settings
@@ -769,5 +769,55 @@ class TestJWTSettings:
 
         with pytest.raises(
             ImproperlyConfigured, match="APCORE_JWT_ISSUER must be a string"
+        ):
+            get_apcore_settings()
+
+
+class TestOutputFormatterSettings:
+    """Test APCORE_OUTPUT_FORMATTER setting."""
+
+    def test_output_formatter_default_is_none(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.output_formatter is None
+
+    @override_settings(APCORE_OUTPUT_FORMATTER="apcore_toolkit.to_markdown")
+    def test_output_formatter_custom_value(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.output_formatter == "apcore_toolkit.to_markdown"
+
+    @override_settings(APCORE_OUTPUT_FORMATTER=123)
+    def test_output_formatter_must_be_string(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(ImproperlyConfigured, match="APCORE_OUTPUT_FORMATTER"):
+            get_apcore_settings()
+
+
+class TestAIEnhanceSettings:
+    """Test APCORE_AI_ENHANCE setting."""
+
+    def test_ai_enhance_default_is_false(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.ai_enhance is False
+
+    @override_settings(APCORE_AI_ENHANCE=True)
+    def test_ai_enhance_custom_value(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.ai_enhance is True
+
+    @override_settings(APCORE_AI_ENHANCE="yes")
+    def test_ai_enhance_must_be_boolean(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_AI_ENHANCE must be a boolean"
         ):
             get_apcore_settings()

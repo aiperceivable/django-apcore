@@ -32,7 +32,10 @@ DATABASES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# ---------------------------------------------------------------------------
 # apcore settings
+# ---------------------------------------------------------------------------
+
 APCORE_MODULE_DIR = str(BASE_DIR / "demo" / "apcore_modules")
 APCORE_SERVE_TRANSPORT = "streamable-http"
 APCORE_SERVE_HOST = "0.0.0.0"
@@ -45,6 +48,16 @@ APCORE_SERVE_VALIDATE_INPUTS = True
 # Served by the MCP server (apcore-mcp) on the MCP port, not the Django port.
 APCORE_EXPLORER_ENABLED = True  # browse tools at /explorer on MCP server
 APCORE_EXPLORER_ALLOW_EXECUTE = True  # allow Try-it execution
+
+# Output formatter (apcore-mcp 0.10.0+)
+# Set to "apcore_toolkit.to_markdown" for Markdown-formatted results.
+# Default: None (raw JSON)
+# APCORE_OUTPUT_FORMATTER = "apcore_toolkit.to_markdown"
+
+# AI Enhancement (apcore-toolkit 0.2.0+)
+# Enable to auto-enhance scanned modules via local SLM.
+# Requires APCORE_AI_ENABLED=true env var and a running Ollama/vLLM instance.
+# APCORE_AI_ENHANCE = True
 
 # JWT Authentication (apcore-mcp >= 0.7.0)
 # Uncomment to enable JWT auth on the MCP server.

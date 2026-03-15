@@ -20,7 +20,14 @@ services:
       - "9090:9090"
     environment:
       - DJANGO_SETTINGS_MODULE=demo.settings
-      # Uncomment to enable JWT authentication on the MCP server
+      # Output formatting (apcore-mcp 0.10.0+)
+      # - APCORE_OUTPUT_FORMATTER=apcore_toolkit.to_markdown
+      # AI Enhancement (apcore-toolkit 0.2.0+)
+      # - APCORE_AI_ENHANCE=true
+      # - APCORE_AI_ENABLED=true
+      # - APCORE_AI_ENDPOINT=http://host.docker.internal:11434/v1
+      # - APCORE_AI_MODEL=qwen:0.6b
+      # JWT Authentication (apcore-mcp >= 0.10.0)
       # - APCORE_JWT_SECRET=change-me-in-production
       # - APCORE_JWT_ALGORITHM=HS256
       # - APCORE_JWT_AUDIENCE=task-manager-api

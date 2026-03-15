@@ -1,16 +1,51 @@
 # django-apcore Demo
 
-Task Manager API demonstrating django-ninja routes → NinjaScanner → Registry → MCP Server pipeline with observability.
+Task Manager API demonstrating django-ninja routes → NinjaScanner → Registry → MCP Server pipeline with the `DjangoApcore` unified entry point.
 
 ## What's Inside
 
 | File | Purpose |
 |---|---|
 | `demo/api.py` | Task Manager CRUD API with Pydantic schemas (django-ninja) |
-| `demo/apcore_modules/task_stats.py` | Standalone `@module` example |
+| `demo/apcore_modules/task_stats.py` | `@app.module()` example using `DjangoApcore` |
 | `Dockerfile` | Installs django-apcore[all] from local source |
 | `docker-compose.yml` | One-click Docker launch |
 | `entrypoint.sh` | Scans routes then starts the MCP server |
+
+## Quick Start with DjangoApcore
+
+```python
+from django_apcore import DjangoApcore
+
+app = DjangoApcore()
+
+# Register a module
+@app.module(id="task_stats.v1", tags=["analytics"])
+def task_stats() -> dict:
+    return {"total": 10, "done": 3, "pending": 7}
+
+# Call from a Django view
+def my_view(request):
+    result = app.call("task_stats.v1", request=request)
+    return JsonResponse(result)
+
+# Async call
+async def my_async_view(request):
+    result = await app.call_async("task_stats.v1", request=request)
+    return JsonResponse(result)
+
+# Scan endpoints programmatically
+modules = app.scan(source="ninja")
+
+# List registered modules
+module_ids = app.list_modules(tags=["analytics"])
+
+# Export as OpenAI tools
+tools = app.to_openai_tools()
+
+# Start MCP server
+app.serve(transport="streamable-http", port=9090, explorer=True)
+```
 
 ## Local Development
 
@@ -28,8 +63,11 @@ pip install -e ".[all]"
 cd example
 export DJANGO_SETTINGS_MODULE=demo.settings
 
-# Generate YAML bindings
-python manage.py apcore_scan --source ninja --output yaml --dir ./demo/apcore_modules
+# Generate YAML bindings (with verification)
+python manage.py apcore_scan --source ninja --output yaml --dir ./demo/apcore_modules --verify
+
+# Or register directly into the registry (no files written)
+python manage.py apcore_scan --source ninja --output registry
 ```
 
 ### 2. Start the Django dev server
@@ -41,7 +79,13 @@ python manage.py runserver
 ### 3. Start the MCP server (separate terminal)
 
 ```bash
-python manage.py apcore_serve --transport streamable-http --host 127.0.0.1 --port 9090 --validate-inputs --log-level DEBUG
+python manage.py apcore_serve \
+  --transport streamable-http \
+  --host 127.0.0.1 \
+  --port 9090 \
+  --validate-inputs \
+  --log-level DEBUG \
+  --explorer
 ```
 
 ### 4. Verify
@@ -91,9 +135,24 @@ The demo ships with 2 seed tasks (id 1 and 2). Use these example inputs in the e
 | `api.tasks.update` | `{"task_id": 1, "title": "Try django-apcore (done!)", "done": true}` |
 | `api.tasks.delete` | `{"task_id": 2}` |
 
-### 6. JWT Authentication (optional)
+### 6. Output Formatting (optional)
 
-Enable JWT-based authentication on the MCP server (requires apcore-mcp >= 0.7.0). When enabled, clients must send a valid `Authorization: Bearer <token>` header.
+By default, MCP results are raw JSON. To get Markdown-formatted output:
+
+```python
+# In settings.py
+APCORE_OUTPUT_FORMATTER = "apcore_toolkit.to_markdown"
+```
+
+Or via CLI:
+
+```bash
+python manage.py apcore_serve --output-formatter apcore_toolkit.to_markdown ...
+```
+
+### 7. JWT Authentication (optional)
+
+Enable JWT-based authentication on the MCP server (requires apcore-mcp >= 0.10.0). When enabled, clients must send a valid `Authorization: Bearer <token>` header.
 
 Uncomment the `APCORE_JWT_*` lines in `demo/settings.py`, then restart the MCP server:
 
@@ -101,31 +160,10 @@ Uncomment the `APCORE_JWT_*` lines in `demo/settings.py`, then restart the MCP s
 python manage.py apcore_serve --transport streamable-http --host 127.0.0.1 --port 9090 --jwt-secret "demo-jwt-secret"
 ```
 
-Or pass all JWT options via CLI:
-
-```bash
-python manage.py apcore_serve \
-  --transport streamable-http --port 9090 \
-  --jwt-secret "demo-jwt-secret" \
-  --jwt-algorithm HS256 \
-  --jwt-audience task-manager-api \
-  --jwt-issuer task-manager
-```
-
-Generate a test token (Python one-liner):
+Generate a test token:
 
 ```bash
 python -c "import jwt; print(jwt.encode({'sub': 'demo-user', 'roles': ['admin']}, 'demo-jwt-secret', algorithm='HS256'))"
-```
-
-Then use it with curl:
-
-```bash
-TOKEN=$(python -c "import jwt; print(jwt.encode({'sub': 'demo-user', 'roles': ['admin']}, 'demo-jwt-secret', algorithm='HS256'))")
-curl http://localhost:9090/mcp \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 ## Docker
@@ -156,17 +194,21 @@ python -m pytest tests/ -v
 
 ## Features Demonstrated
 
+- **`DjangoApcore` unified API** — Single import for all django-apcore functionality
 - **Route scanning** — `apcore_scan --source ninja` discovers all 5 CRUD routes
-- **Semantic module IDs** — action verbs from function names (`list`, `get`, `create`, `update`, `delete`) instead of HTTP methods
+- **Output formats** — `--output yaml`, `--output python`, or `--output registry`
+- **Output verification** — `--verify` validates generated files
+- **Semantic module IDs** — action verbs from function names (`list`, `get`, `create`, `update`, `delete`)
 - **`$ref` resolution** — Pydantic model schemas resolved from OpenAPI `$ref` references
-- **Annotation inference** — GET→readonly, DELETE→destructive, PUT→idempotent
+- **Annotation inference** — GET→readonly/cacheable, DELETE→destructive, PUT→idempotent
 - **Pydantic schemas** — Input validation from `TaskCreate` and `TaskUpdate` models
-- **@module decorator** — `task_stats.v1` registered alongside scanned routes
+- **`@app.module()` decorator** — `task_stats.v1` registered via `DjangoApcore`
 - **MCP Tool Explorer** — Browser-based module viewer via `apcore_serve --explorer`
 - **MCP server** — Streamable HTTP transport on port 9090
+- **Output formatting** — Optional Markdown via `APCORE_OUTPUT_FORMATTER`
 - **Observability** — Tracing (stdout), metrics, and structured JSON logging
 - **Input validation** — `--validate-inputs` checks tool inputs against schemas
-- **JWT authentication** — Optional Bearer token auth via `APCORE_JWT_SECRET` (apcore-mcp >= 0.7.0)
+- **JWT authentication** — Optional Bearer token auth via `APCORE_JWT_SECRET`
 
 ## Project Structure
 
@@ -184,8 +226,8 @@ example/
 │   ├── api.py              # Task Manager CRUD with Pydantic schemas
 │   └── apcore_modules/
 │       ├── __init__.py     # Re-exports for auto-discovery
-│       ├── task_stats.py   # @module "task_stats.v1"
+│       ├── task_stats.py   # @app.module() via DjangoApcore
 │       └── *.binding.yaml  # Auto-generated YAML bindings for scanned routes
 └── tests/
-    └── test_demo.py        # Unit + integration tests
+    └── test_demo.py        # Unit + integration + DjangoApcore tests
 ```

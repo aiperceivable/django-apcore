@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-15
+
+### Added
+
+- **`DjangoApcore` unified entry point** — single class for all django-apcore functionality
+  - `app.call()`, `app.call_async()`, `app.stream()` with automatic Django request→Context mapping
+  - `app.module()` decorator for registering modules
+  - `app.scan()` for programmatic endpoint scanning
+  - `app.serve()` for starting MCP server
+  - `app.to_openai_tools()` for OpenAI export
+  - `app.submit_task()`, `app.get_task_status()`, `app.cancel_task()` for async tasks
+  - `app.list_modules()`, `app.describe()` for module discovery
+  - `DjangoApcore.get_instance()` singleton pattern
+  - Lazy property access: `app.registry`, `app.executor`, `app.settings`, etc.
+- **apcore-toolkit integration** — replaced local scanner, writer, and OpenAPI implementations
+  - `ScannedModule` now supports `documentation`, `examples`, `metadata` fields
+  - `annotations` field uses `ModuleAnnotations` instead of `dict[str, bool]`
+  - `BaseScanner` gains `extract_docstring()`, `infer_annotations_from_method()`, improved `deduplicate_ids()`
+  - OpenAPI utilities (`resolve_ref`, `resolve_schema`, `extract_input_schema`, `extract_output_schema`) now from toolkit
+  - Writers (`YAMLWriter`, `PythonWriter`) now from toolkit, returning `WriteResult` with verification support
+  - `RegistryWriter` available for direct registry registration
+- **Annotation inference** in NinjaScanner and DRFScanner
+  - GET → `readonly=True, cacheable=True`
+  - DELETE → `destructive=True`
+  - PUT → `idempotent=True`
+  - Metadata dict includes `http_method` and `url_path`
+- **`--output registry`** option for `apcore_scan` — register modules directly without file I/O
+- **`--verify`** option for `apcore_scan` — validate generated files (YAML structure, Python syntax)
+- **`--ai-enhance`** option for `apcore_scan` — enhance module metadata via local SLM (Ollama/vLLM)
+- **`--output-formatter`** option for `apcore_serve` — customize result formatting (e.g., `apcore_toolkit.to_markdown`)
+- **`APCORE_OUTPUT_FORMATTER`** setting — configure output formatter globally
+- **`APCORE_AI_ENHANCE`** setting — enable AI enhancement by default
+- `flatten_pydantic_params` from toolkit used in `DjangoDiscoverer._adapt_view_module()`
+- 17 new tests for `DjangoApcore` unified class
+- 6 new tests for example project `DjangoApcore` integration
+- New tests for `APCORE_OUTPUT_FORMATTER` and `APCORE_AI_ENHANCE` settings
+
+### Changed
+
+- **BREAKING:** `apcore` dependency bumped from `>= 0.6.0` to `>= 0.13.0`
+- **BREAKING:** `apcore-mcp` dependency bumped from `>= 0.7.0` to `>= 0.10.0`
+- **BREAKING:** `ScannedModule.annotations` type changed from `dict[str, bool] | None` to `ModuleAnnotations | None`
+- **BREAKING:** `YAMLWriter.write()` now returns `list[WriteResult]` instead of `list[dict]`
+- **BREAKING:** `PythonWriter.write()` now returns `list[WriteResult]` instead of `list[str]`
+- **BREAKING:** `BaseScanner.scan()` signature changed from `(include, exclude)` to `(**kwargs)`
+- **BREAKING:** `BaseScanner._deduplicate_ids(list[str])` replaced by `deduplicate_ids(list[ScannedModule])`
+- Added `apcore-toolkit >= 0.2.0` as a core dependency
+- `scanners/base.py` now re-exports from `apcore_toolkit` instead of local implementations
+- `output/yaml_writer.py` and `output/python_writer.py` now re-export from `apcore_toolkit`
+- `extensions.py` uses `flatten_pydantic_params` for Pydantic model handling
+- Example project `task_stats.py` updated to use `@app.module()` via `DjangoApcore`
+- Version bumped to 0.3.0
+
+### Testing
+
+- 465 tests (up from 448 in 0.2.0) + 21 example project tests
+- All tests passing with lint clean
+
 ## [0.2.0] - 2026-02-28
 
 ### Added

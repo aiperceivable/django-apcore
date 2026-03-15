@@ -214,10 +214,38 @@ class TestNinjaScanner:
 
     def test_duplicate_module_id_resolution(self):
         """BL-003: Duplicate module IDs get numeric suffix."""
+        from django_apcore.scanners.base import ScannedModule
         from django_apcore.scanners.ninja import NinjaScanner
 
         scanner = NinjaScanner()
-        ids = scanner._deduplicate_ids(["users.list", "users.list", "users.list"])
+        modules = [
+            ScannedModule(
+                module_id="users.list",
+                description="",
+                input_schema={},
+                output_schema={},
+                tags=[],
+                target="a:b",
+            ),
+            ScannedModule(
+                module_id="users.list",
+                description="",
+                input_schema={},
+                output_schema={},
+                tags=[],
+                target="a:b",
+            ),
+            ScannedModule(
+                module_id="users.list",
+                description="",
+                input_schema={},
+                output_schema={},
+                tags=[],
+                target="a:b",
+            ),
+        ]
+        result = scanner.deduplicate_ids(modules)
+        ids = [m.module_id for m in result]
         assert ids == ["users.list", "users.list_2", "users.list_3"]
 
 

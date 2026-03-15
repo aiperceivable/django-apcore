@@ -5,7 +5,9 @@ Orchestrates scanning of Django API endpoints and writing output files.
 Usage:
     manage.py apcore_scan --source ninja --output yaml
     manage.py apcore_scan --source drf --output python --dir ./modules/
+    manage.py apcore_scan --source ninja --output registry
     manage.py apcore_scan --source ninja --dry-run --include "users.*"
+    manage.py apcore_scan --source ninja --ai-enhance
 """
 
 from __future__ import annotations
@@ -40,10 +42,11 @@ class Command(BaseCommand):
             "-o",
             type=str,
             default="yaml",
-            choices=["yaml", "python"],
+            choices=["yaml", "python", "registry"],
             help=(
                 "Output format: 'yaml' for .binding.yaml files, "
-                "'python' for @module files. Default: yaml."
+                "'python' for @module files, "
+                "'registry' for direct registry registration. Default: yaml."
             ),
         )
         parser.add_argument(
@@ -71,6 +74,22 @@ class Command(BaseCommand):
             default=None,
             help="Regex pattern to exclude.",
         )
+        parser.add_argument(
+            "--verify",
+            action="store_true",
+            default=False,
+            help="Verify written output files (syntax, YAML validity, etc.).",
+        )
+        parser.add_argument(
+            "--ai-enhance",
+            action="store_true",
+            default=None,
+            dest="ai_enhance",
+            help=(
+                "Enhance module metadata using a local SLM via apcore-toolkit's "
+                "AIEnhancer. Requires APCORE_AI_ENABLED=true or explicit flag."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         source = options["source"]
@@ -80,6 +99,8 @@ class Command(BaseCommand):
         include = options["include"]
         exclude = options["exclude"]
         verbosity = options["verbosity"]
+        verify = options["verify"]
+        ai_enhance_flag = options["ai_enhance"]
 
         # Validate regex patterns upfront
         if include:
@@ -101,9 +122,14 @@ class Command(BaseCommand):
                 ) from e
 
         # Resolve output directory
+        settings = get_apcore_settings()
         if output_dir is None:
-            settings = get_apcore_settings()
             output_dir = settings.module_dir
+
+        # Resolve AI enhancement
+        ai_enhance = (
+            ai_enhance_flag if ai_enhance_flag is not None else settings.ai_enhance
+        )
 
         # Get scanner
         try:
@@ -137,6 +163,31 @@ class Command(BaseCommand):
                 f"Ensure your API is configured."
             )
 
+        # AI enhancement
+        if modules and ai_enhance:
+            try:
+                from apcore_toolkit import AIEnhancer
+
+                enhancer = AIEnhancer()
+                if enhancer.is_enabled():
+                    if verbosity >= 1:
+                        self.stdout.write(
+                            "[django-apcore] Enhancing modules with AI..."
+                        )
+                    modules = enhancer.enhance(modules)
+                    if verbosity >= 1:
+                        self.stdout.write("[django-apcore] AI enhancement complete.")
+                else:
+                    self.stdout.write(
+                        "[django-apcore] AI enhancement requested but "
+                        "APCORE_AI_ENABLED is not set. Skipping."
+                    )
+            except ImportError:
+                self.stdout.write(
+                    "[django-apcore] apcore-toolkit AIEnhancer not available. "
+                    "Skipping AI enhancement."
+                )
+
         # Report warnings
         if modules:
             all_warnings = []
@@ -149,21 +200,70 @@ class Command(BaseCommand):
                         self.stdout.write(f"[django-apcore]   - {warning}")
 
         # Get writer and write output
-        writer = get_writer(output_format)
+        if output_format == "registry":
+            # Registry writer needs a registry instance
+            from django_apcore.output.registry_writer import DjangoRegistryWriter
+            from django_apcore.registry import get_registry
 
-        if dry_run:
-            if verbosity >= 1:
-                self.stdout.write("[django-apcore] Dry run -- no files written.")
-            result = writer.write(modules, output_dir, dry_run=True)
-            if verbosity >= 2:
-                for item in result:
-                    self.stdout.write(f"[django-apcore] Would write: {item}")
+            writer = DjangoRegistryWriter()
+            registry = get_registry()
+
+            if dry_run:
+                if verbosity >= 1:
+                    self.stdout.write(
+                        "[django-apcore] Dry run -- no modules registered."
+                    )
+                result = writer.write(modules, registry, dry_run=True)
+                if verbosity >= 2:
+                    for item in result:
+                        self.stdout.write(
+                            f"[django-apcore] Would register: {item.module_id}"
+                        )
+            else:
+                result = writer.write(modules, registry, verify=verify)
+                if verbosity >= 1:
+                    self.stdout.write(
+                        f"[django-apcore] Registered {len(result)} modules "
+                        f"into registry."
+                    )
+                # Report verification failures
+                if verify:
+                    failures = [r for r in result if not r.verified]
+                    if failures:
+                        for f in failures:
+                            self.stderr.write(
+                                f"[django-apcore] Verification failed for "
+                                f"{f.module_id}: {f.verification_error}"
+                            )
         else:
-            result = writer.write(modules, output_dir, dry_run=False)
-            if verbosity >= 1:
-                self.stdout.write(
-                    f"[django-apcore] Generated {len(modules)} " f"module definitions."
-                )
-                self.stdout.write(
-                    f"[django-apcore] Written {len(result)} files " f"to {output_dir}/"
-                )
+            writer = get_writer(output_format)
+
+            if dry_run:
+                if verbosity >= 1:
+                    self.stdout.write("[django-apcore] Dry run -- no files written.")
+                result = writer.write(modules, output_dir, dry_run=True)
+                if verbosity >= 2:
+                    for item in result:
+                        self.stdout.write(
+                            f"[django-apcore] Would write: {item.module_id}"
+                        )
+            else:
+                result = writer.write(modules, output_dir, verify=verify)
+                if verbosity >= 1:
+                    self.stdout.write(
+                        f"[django-apcore] Generated {len(modules)} "
+                        f"module definitions."
+                    )
+                    self.stdout.write(
+                        f"[django-apcore] Written {len(result)} files "
+                        f"to {output_dir}/"
+                    )
+                # Report verification failures
+                if verify:
+                    failures = [r for r in result if not r.verified]
+                    if failures:
+                        for f in failures:
+                            self.stderr.write(
+                                f"[django-apcore] Verification failed for "
+                                f"{f.module_id}: {f.verification_error}"
+                            )

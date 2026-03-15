@@ -16,7 +16,7 @@ def _mock_settings(**overrides):
     defaults = {
         "serve_transport": "stdio",
         "serve_host": "127.0.0.1",
-        "serve_port": 8000,
+        "serve_port": 9090,
         "server_name": "apcore-mcp",
         "server_version": None,
         "middlewares": [],
@@ -39,6 +39,7 @@ def _mock_settings(**overrides):
         "jwt_algorithm": "HS256",
         "jwt_audience": None,
         "jwt_issuer": None,
+        "output_formatter": None,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)

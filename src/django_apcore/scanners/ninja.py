@@ -9,7 +9,9 @@ import logging
 import re
 from typing import Any
 
-from django_apcore.scanners.base import BaseScanner, ScannedModule
+from apcore_toolkit.openapi import extract_input_schema, extract_output_schema
+from apcore_toolkit.scanner import BaseScanner
+from apcore_toolkit.types import ScannedModule
 
 logger = logging.getLogger("django_apcore")
 
@@ -28,6 +30,7 @@ class NinjaScanner(BaseScanner):
         self,
         include: str | None = None,
         exclude: str | None = None,
+        **kwargs: Any,
     ) -> list[ScannedModule]:
         """Scan all django-ninja endpoints.
 
@@ -124,25 +127,9 @@ class NinjaScanner(BaseScanner):
             except Exception:
                 logger.warning("Error scanning NinjaAPI instance", exc_info=True)
 
-        # Deduplicate IDs
+        # Deduplicate IDs using toolkit's improved method
         if modules:
-            deduped_ids = self._deduplicate_ids([m.module_id for m in modules])
-            for i, module in enumerate(modules):
-                if module.module_id != deduped_ids[i]:
-                    modules[i] = ScannedModule(
-                        module_id=deduped_ids[i],
-                        description=module.description,
-                        input_schema=module.input_schema,
-                        output_schema=module.output_schema,
-                        tags=module.tags,
-                        target=module.target,
-                        version=module.version,
-                        warnings=[
-                            *module.warnings,
-                            f"Module ID renamed from '{module.module_id}' "
-                            f"to '{deduped_ids[i]}' to avoid collision",
-                        ],
-                    )
+            modules = self.deduplicate_ids(modules)
 
         return modules
 
@@ -208,8 +195,8 @@ class NinjaScanner(BaseScanner):
                 operation_id=operation_id,
             )
 
-            input_schema = self._extract_input_schema(operation, openapi_doc)
-            output_schema = self._extract_output_schema(operation, openapi_doc)
+            input_schema = extract_input_schema(operation, openapi_doc)
+            output_schema = extract_output_schema(operation, openapi_doc)
 
             tags = operation.get("tags", [])
 
@@ -234,6 +221,9 @@ class NinjaScanner(BaseScanner):
                     f"Endpoint '{method.upper()} {path}' has no description"
                 )
 
+            # Infer annotations from HTTP method
+            annotations = self.infer_annotations_from_method(method)
+
             return ScannedModule(
                 module_id=module_id,
                 description=description,
@@ -242,6 +232,8 @@ class NinjaScanner(BaseScanner):
                 tags=tags,
                 target=target,
                 warnings=warnings,
+                annotations=annotations,
+                metadata={"http_method": method.upper(), "url_path": path},
             )
         except Exception:
             logger.warning(
@@ -301,6 +293,3 @@ class NinjaScanner(BaseScanner):
         if docstring:
             return docstring.split("\n")[0].strip()
         return f"No description available for {operation_id}"
-
-    # _extract_input_schema, _extract_output_schema, and _deduplicate_ids
-    # are inherited from BaseScanner.

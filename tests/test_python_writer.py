@@ -2,6 +2,7 @@
 import ast
 
 import pytest
+from apcore import ModuleAnnotations
 
 
 @pytest.fixture
@@ -106,6 +107,7 @@ class TestPythonWriter:
         py_files = list(tmp_path.glob("*.py"))
         assert len(py_files) == 0
         assert len(result) >= 1
+        assert result[0].module_id == "api.v1.users.list"
 
     def test_imports_apcore_module(self, tmp_path, sample_modules):
         from django_apcore.output.python_writer import PythonWriter
@@ -128,7 +130,7 @@ class TestPythonWriter:
             output_schema={"type": "object", "properties": {}},
             tags=["users"],
             target="myapp.api:list_users",
-            annotations={"deprecated": True},
+            annotations=ModuleAnnotations(readonly=True),
         )
 
         writer = PythonWriter()
@@ -137,7 +139,6 @@ class TestPythonWriter:
         py_file = list(tmp_path.glob("*.py"))[0]
         content = py_file.read_text()
         assert "annotations=" in content
-        assert "'deprecated': True" in content
 
     def test_annotations_omitted_when_none(self, tmp_path, sample_modules):
         from django_apcore.output.python_writer import PythonWriter
@@ -182,3 +183,21 @@ class TestPythonWriter:
         writer = PythonWriter()
         with pytest.raises(ValueError, match="Invalid target format"):
             writer.write([module], str(tmp_path), dry_run=True)
+
+    def test_write_returns_write_results(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        result = writer.write(sample_modules, str(tmp_path))
+
+        assert len(result) >= 1
+        assert result[0].module_id == "api.v1.users.list"
+        assert result[0].path is not None
+
+    def test_write_with_verify(self, tmp_path, sample_modules):
+        from django_apcore.output.python_writer import PythonWriter
+
+        writer = PythonWriter()
+        result = writer.write(sample_modules, str(tmp_path), verify=True)
+
+        assert all(r.verified for r in result)

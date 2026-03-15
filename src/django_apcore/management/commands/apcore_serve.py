@@ -7,6 +7,7 @@ Usage:
     manage.py apcore_serve --transport streamable-http --host 0.0.0.0 --port 9090
     manage.py apcore_serve --name my-server
     manage.py apcore_serve --version 1.2.3
+    manage.py apcore_serve --output-formatter apcore_toolkit.to_markdown
 """
 
 from __future__ import annotations
@@ -18,6 +19,29 @@ from django.core.management.base import BaseCommand, CommandError
 
 from django_apcore.registry import get_registry
 from django_apcore.settings import get_apcore_settings
+
+
+def _resolve_output_formatter(dotted_path: str | None) -> Any:
+    """Resolve an output_formatter dotted path to a callable.
+
+    Args:
+        dotted_path: Dotted path like 'apcore_toolkit.to_markdown', or None.
+
+    Returns:
+        The resolved callable, or None.
+    """
+    if not dotted_path:
+        return None
+    import importlib
+
+    module_path, sep, attr_name = dotted_path.rpartition(".")
+    if not sep or not module_path:
+        return None
+    try:
+        mod = importlib.import_module(module_path)
+        return getattr(mod, attr_name)
+    except (ImportError, AttributeError):
+        return None
 
 
 def serve(
@@ -38,6 +62,7 @@ def serve(
     explorer_prefix: str = "/explorer",
     allow_execute: bool = False,
     authenticator: Any = None,
+    output_formatter: Any = None,
 ) -> None:
     """Delegate to apcore_mcp.serve().
 
@@ -79,6 +104,8 @@ def serve(
         kwargs["allow_execute"] = allow_execute
     if authenticator is not None:
         kwargs["authenticator"] = authenticator
+    if output_formatter is not None:
+        kwargs["output_formatter"] = output_formatter
 
     apcore_serve(registry_or_executor, **kwargs)
 
@@ -204,6 +231,17 @@ class Command(BaseCommand):
             default=None,
             dest="jwt_issuer",
             help="Expected JWT issuer claim. Default: APCORE_JWT_ISSUER setting.",
+        )
+        parser.add_argument(
+            "--output-formatter",
+            type=str,
+            default=None,
+            dest="output_formatter",
+            help=(
+                "Dotted path to output formatter callable "
+                "(e.g., 'apcore_toolkit.to_markdown'). "
+                "Default: APCORE_OUTPUT_FORMATTER setting."
+            ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -374,7 +412,7 @@ class Command(BaseCommand):
             except ImportError:
                 raise CommandError(
                     "apcore-mcp >= 0.7.0 is required for JWT authentication. "
-                    "Install with: pip install 'apcore-mcp>=0.7.0'"
+                    "Install with: pip install 'apcore-mcp>=0.10.0'"
                 ) from None
 
             authenticator = JWTAuthenticator(
@@ -386,6 +424,23 @@ class Command(BaseCommand):
 
             if verbosity >= 1:
                 self.stdout.write("[django-apcore] JWT authentication enabled.")
+
+        # Resolve output formatter
+        output_formatter_path = (
+            options.get("output_formatter")
+            if options.get("output_formatter") is not None
+            else settings.output_formatter
+        )
+        output_formatter = _resolve_output_formatter(output_formatter_path)
+        if output_formatter_path and output_formatter is None:
+            self.stderr.write(
+                f"[django-apcore] WARNING: Could not resolve output formatter "
+                f"'{output_formatter_path}'. Results will be raw JSON."
+            )
+        elif output_formatter is not None and verbosity >= 1:
+            self.stdout.write(
+                f"[django-apcore] Output formatter: {output_formatter_path}"
+            )
 
         # Delegate to apcore-mcp
         try:
@@ -407,6 +462,7 @@ class Command(BaseCommand):
                 explorer_prefix=explorer_prefix,
                 allow_execute=allow_execute,
                 authenticator=authenticator,
+                output_formatter=output_formatter,
             )
         except ImportError as e:
             msg = (

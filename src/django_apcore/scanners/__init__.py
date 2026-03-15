@@ -1,11 +1,13 @@
 """Scanner subpackage.
 
 Provides BaseScanner, ScannedModule, and scanner discovery utilities.
+Re-exports core types from apcore-toolkit.
 """
 
 from __future__ import annotations
 
-from django_apcore.scanners.base import BaseScanner, ScannedModule
+from apcore_toolkit.scanner import BaseScanner
+from apcore_toolkit.types import ScannedModule
 
 __all__ = ["BaseScanner", "ScannedModule"]
 

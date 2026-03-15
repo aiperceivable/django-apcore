@@ -266,6 +266,12 @@ def start_embedded_server() -> Any | None:
                     "APCORE_JWT_SECRET will be ignored"
                 )
 
+        # Output formatter (apcore-mcp 0.10.0+)
+        if settings.output_formatter is not None:
+            formatter = _resolve_dotted_callable(settings.output_formatter)
+            if formatter is not None:
+                kwargs["output_formatter"] = formatter
+
         server = MCPServer(registry_or_executor, **kwargs)
         server.start()
         _embedded_server = server
@@ -367,6 +373,18 @@ def _reset_extension_manager() -> None:
     global _ext_manager
     with _ext_manager_lock:
         _ext_manager = None
+
+
+def _resolve_dotted_callable(dotted_path: str) -> Any | None:
+    """Resolve a dotted path like 'apcore_toolkit.to_markdown' to a callable."""
+    module_path, sep, attr_name = dotted_path.rpartition(".")
+    if not sep or not module_path:
+        return None
+    try:
+        mod = importlib.import_module(module_path)
+        return getattr(mod, attr_name)
+    except (ImportError, AttributeError):
+        return None
 
 
 def _reset_registry() -> None:

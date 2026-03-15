@@ -109,7 +109,7 @@ def _mock_settings(**overrides):
     defaults = {
         "serve_transport": "stdio",
         "serve_host": "127.0.0.1",
-        "serve_port": 8000,
+        "serve_port": 9090,
         "server_name": "apcore-mcp",
         "server_version": None,
         "middlewares": [],
@@ -128,6 +128,11 @@ def _mock_settings(**overrides):
         "explorer_enabled": False,
         "explorer_prefix": "/explorer",
         "explorer_allow_execute": False,
+        "jwt_secret": None,
+        "jwt_algorithm": "HS256",
+        "jwt_audience": None,
+        "jwt_issuer": None,
+        "output_formatter": None,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
@@ -290,3 +295,38 @@ class TestServeWrapperExplorer:
             assert "explorer" not in call_kwargs
             assert "explorer_prefix" not in call_kwargs
             assert "allow_execute" not in call_kwargs
+
+
+class TestExplorerRedirectView:
+    """Test the explorer_redirect Django view."""
+
+    @override_settings(APCORE_EXPLORER_ENABLED=True)
+    def test_redirect_when_enabled(self):
+        from django_apcore.views import explorer_redirect
+
+        response = explorer_redirect(MagicMock())
+        assert response.status_code == 200
+        content = response.content.decode()
+        assert "MCP server" in content
+        assert "9090" in content
+        assert "/explorer/" in content
+
+    def test_404_when_disabled(self):
+        from django_apcore.views import explorer_redirect
+
+        response = explorer_redirect(MagicMock())
+        assert response.status_code == 404
+        assert b"disabled" in response.content
+
+    @override_settings(
+        APCORE_EXPLORER_ENABLED=True,
+        APCORE_SERVE_HOST="0.0.0.0",
+        APCORE_SERVE_PORT=9090,
+    )
+    def test_displays_localhost_for_all_interfaces(self):
+        from django_apcore.views import explorer_redirect
+
+        response = explorer_redirect(MagicMock())
+        content = response.content.decode()
+        assert "127.0.0.1" in content
+        assert "0.0.0.0" not in content
