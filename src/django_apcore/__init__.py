@@ -11,7 +11,11 @@ Usage::
 """
 
 from django_apcore.client import DjangoApcore
+from importlib.metadata import version as _get_version
 
-__version__ = "0.3.0"
+try:
+    __version__ = _get_version("django-apcore")
+except Exception:
+    __version__ = "unknown"
 
 __all__ = ["DjangoApcore", "__version__"]
