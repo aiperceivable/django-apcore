@@ -171,4 +171,4 @@ pip install -e /path/to/apcore-python
 ```
 
 **Issue: `apcore.Registry` has a different API than expected**
-Check the apcore SDK source at `/Users/tercel/WorkSpace/aipartnerup/apcore-python/src/apcore/` to verify the `Registry` class API. The test only checks for `register()` method which is a fundamental part of the Registry interface.
+Check the apcore SDK source at `/Users/tercel/WorkSpace/aiperceivable/apcore-python/src/apcore/` to verify the `Registry` class API. The test only checks for `register()` method which is a fundamental part of the Registry interface.

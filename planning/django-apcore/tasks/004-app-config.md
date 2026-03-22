@@ -299,4 +299,4 @@ git commit -m "feat: ApcoreAppConfig with auto-discovery on ready()"
 Django may call `ready()` during test setup if the app is in `INSTALLED_APPS`. Use `_reset_registry()` in test `setup_method` to ensure clean state. Consider guarding against double-initialization in `ready()` with a class-level flag.
 
 **Issue: `BindingLoader` API mismatch with apcore SDK**
-The `BindingLoader.load_binding_dir()` signature may differ from what's shown here. Check the apcore SDK source at `/Users/tercel/WorkSpace/aipartnerup/apcore-python/src/apcore/` for the exact API. The implementation should adapt to the actual SDK interface.
+The `BindingLoader.load_binding_dir()` signature may differ from what's shown here. Check the apcore SDK source at `/Users/tercel/WorkSpace/aiperceivable/apcore-python/src/apcore/` for the exact API. The implementation should adapt to the actual SDK interface.

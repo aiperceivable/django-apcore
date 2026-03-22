@@ -876,8 +876,8 @@ django-apcore/
 
 ### B. References
 
-- apcore v0.6.0: `/Users/tercel/WorkSpace/aipartnerup/apcore-python/`
-- apcore-mcp v0.4.0: `/Users/tercel/WorkSpace/aipartnerup/apcore-mcp-python/`
+- apcore v0.6.0: `/Users/tercel/WorkSpace/aiperceivable/apcore-python/`
+- apcore-mcp v0.4.0: `/Users/tercel/WorkSpace/aiperceivable/apcore-mcp-python/`
 - Upstream SDK Analysis: [docs/django-apcore/upstream-sdk-analysis.md](./upstream-sdk-analysis.md)
 - Redesign Design: [docs/plans/2026-02-23-v0.1.0-redesign-design.md](../plans/2026-02-23-v0.1.0-redesign-design.md)
 

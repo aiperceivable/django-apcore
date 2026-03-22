@@ -1,10 +1,10 @@
 # django-apcore
 
-Django integration for the [apcore](https://github.com/aipartnerup/apcore) protocol — scan your existing Django REST APIs and serve them as MCP tools for AI agents.
+Django integration for the [apcore](https://github.com/aiperceivable/apcore) protocol — scan your existing Django REST APIs and serve them as MCP tools for AI agents.
 
 ## Overview
 
-**django-apcore** bridges your existing Django REST Framework and django-ninja endpoints to the [apcore](https://github.com/aipartnerup/apcore) protocol, enabling them to be served as [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) tools that AI agents can discover and invoke.
+**django-apcore** bridges your existing Django REST Framework and django-ninja endpoints to the [apcore](https://github.com/aiperceivable/apcore) protocol, enabling them to be served as [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) tools that AI agents can discover and invoke.
 
 The core philosophy is **scan, don't rewrite**: instead of manually defining MCP tools alongside your API endpoints, django-apcore auto-scans your existing OpenAPI schemas (via drf-spectacular or django-ninja) and generates apcore module definitions. These modules are then served to AI agents through apcore-mcp.
 
@@ -313,7 +313,7 @@ All settings are prefixed with `APCORE_` and read from Django's `settings.py`.
 |---------|------|---------|-------------|
 | `APCORE_AI_ENHANCE` | `bool` | `False` | Enable AI enhancement in `apcore_scan` |
 
-AI enhancement also requires the `APCORE_AI_ENABLED=true` environment variable and a running SLM (Ollama/vLLM). See [apcore-toolkit](https://github.com/aipartnerup/apcore-toolkit-python) for configuration.
+AI enhancement also requires the `APCORE_AI_ENABLED=true` environment variable and a running SLM (Ollama/vLLM). See [apcore-toolkit](https://github.com/aiperceivable/apcore-toolkit-python) for configuration.
 
 ### Observability Settings
 

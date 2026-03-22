@@ -456,7 +456,7 @@ git commit -m "feat: apcore_serve management command with registry integration"
 ## Troubleshooting
 
 **Issue: `apcore_mcp.serve()` signature differs from what's used here**
-Check the apcore-mcp-python source at `/Users/tercel/WorkSpace/aipartnerup/apcore-mcp-python/src/apcore_mcp/` for the exact `serve()` function signature. The wrapper function in `apcore_serve.py` should adapt to match the actual API.
+Check the apcore-mcp-python source at `/Users/tercel/WorkSpace/aiperceivable/apcore-mcp-python/src/apcore_mcp/` for the exact `serve()` function signature. The wrapper function in `apcore_serve.py` should adapt to match the actual API.
 
 **Issue: `registry.count` property vs method**
 Different versions of the apcore SDK may expose `count` as a property or method. The implementation checks both patterns with `getattr` and `callable()`. Verify against the actual apcore SDK source to determine the correct access pattern.

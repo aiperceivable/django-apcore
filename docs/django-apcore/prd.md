@@ -12,8 +12,8 @@
 | Status             | Draft                                                      |
 | Created            | 2026-02-19                                                 |
 | Last Updated       | 2026-02-23                                                 |
-| Repository         | /Users/tercel/WorkSpace/aipartnerup/django-apcore/         |
-| Sister Project     | /Users/tercel/WorkSpace/aipartnerup/apcore-mcp-python/     |
+| Repository         | /Users/tercel/WorkSpace/aiperceivable/django-apcore/         |
+| Sister Project     | /Users/tercel/WorkSpace/aiperceivable/apcore-mcp-python/     |
 | Idea Source        | ideas/django-apcore/draft.md (5 brainstorming sessions)    |
 
 ---
