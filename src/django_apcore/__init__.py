@@ -10,8 +10,9 @@ Usage::
     result = app.call("users.list", {"page": 1}, request=request)
 """
 
-from django_apcore.client import DjangoApcore
 from importlib.metadata import version as _get_version
+
+from django_apcore.client import DjangoApcore
 
 try:
     __version__ = _get_version("django-apcore")
