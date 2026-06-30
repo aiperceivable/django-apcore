@@ -12,11 +12,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from apcore import (
-    MAX_MODULE_ID_LENGTH,
-    RESERVED_WORDS,
-    ExtensionManager,
-)
+from apcore import MAX_MODULE_ID_LENGTH, RESERVED_WORDS, ExtensionManager
 
 if TYPE_CHECKING:
     from django_apcore.settings import ApcoreSettings

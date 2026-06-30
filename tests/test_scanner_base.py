@@ -20,6 +20,10 @@ class TestScannedModule:
         from django_apcore.scanners.base import ScannedModule
 
         field_names = {f.name for f in fields(ScannedModule)}
+        # Core fields the Django scanners depend on. ScannedModule may grow
+        # additional optional fields across apcore-toolkit releases (e.g.
+        # ``suggested_alias`` in 0.4+, ``display`` in 0.5+), so assert these
+        # are a subset rather than an exact match.
         expected = {
             "module_id",
             "description",
@@ -34,7 +38,7 @@ class TestScannedModule:
             "examples",
             "metadata",
         }
-        assert expected == field_names
+        assert expected <= field_names
 
     def test_create_with_required_fields(self):
         """ScannedModule can be created with required fields."""

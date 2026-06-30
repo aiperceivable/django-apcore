@@ -280,7 +280,12 @@ All settings are prefixed with `APCORE_` and read from Django's `settings.py`.
 | `APCORE_SERVE_PORT` | `int` | `9090` | Port for HTTP-based transports (1–65535) |
 | `APCORE_SERVER_NAME` | `str` | `"apcore-mcp"` | MCP server name (1–100 characters) |
 | `APCORE_SERVER_VERSION` | `str \| None` | `None` | Server version string |
-| `APCORE_OUTPUT_FORMATTER` | `str \| None` | `None` | Dotted path to output formatter (e.g., `"apcore_toolkit.to_markdown"`) |
+| `APCORE_OUTPUT_FORMATTER` | `str \| None` | `None` | Dotted path to output formatter (e.g., `"apcore_toolkit.to_markdown"`). Honoured by both `apcore_serve` and the embedded server (apcore-mcp 0.17+) |
+| `APCORE_SERVE_STRATEGY` | `str \| None` | `None` | Pipeline execution strategy: `"standard"`, `"internal"`, `"testing"`, `"performance"`, `"minimal"` (apcore-mcp 0.13+) |
+| `APCORE_SERVE_OUTPUT_FORMAT` | `str \| None` | `None` | Tabular tool-result output: `"json"`, `"csv"`, `"jsonl"` (apcore-mcp 0.15+) |
+| `APCORE_SERVE_OBSERVABILITY` | `bool` | `False` | Auto-wire metrics + usage collection and expose `/api/usage` endpoints (apcore-mcp 0.14+) |
+| `APCORE_SERVE_REDACT_OUTPUT` | `bool` | `True` | Redact sensitive fields in tool results (apcore-mcp 0.13+) |
+| `APCORE_SERVE_TRACE` | `bool` | `False` | Emit per-step pipeline timing traces (apcore-mcp 0.13+) |
 
 ### Extension Settings
 
@@ -297,6 +302,9 @@ All settings are prefixed with `APCORE_` and read from Django's `settings.py`.
 | `APCORE_EXPLORER_ENABLED` | `bool` | `False` | Enable the browser-based Tool Explorer UI |
 | `APCORE_EXPLORER_PREFIX` | `str` | `"/explorer"` | URL prefix for the explorer UI |
 | `APCORE_EXPLORER_ALLOW_EXECUTE` | `bool` | `False` | Allow tool execution from the explorer UI |
+| `APCORE_EXPLORER_TITLE` | `str \| None` | `None` | Title shown in the Tool Explorer UI |
+| `APCORE_EXPLORER_PROJECT_NAME` | `str \| None` | `None` | Project name shown in the Tool Explorer UI |
+| `APCORE_EXPLORER_PROJECT_URL` | `str \| None` | `None` | Project URL linked from the Tool Explorer UI |
 
 ### JWT Authentication Settings
 
@@ -368,6 +376,11 @@ APCORE_EMBEDDED_SERVER = {
 }
 ```
 
+The embedded server also honours the **MCP Server Settings**, **Explorer Settings**,
+and **JWT Authentication Settings** above (apcore-mcp 0.17+): output formatting,
+pipeline `strategy`, `observability`, `redact_output`, `trace`, and the Tool
+Explorer UI/branding all apply to the embedded server, not just `apcore_serve`.
+
 ### Task & Cancellation Settings
 
 | Setting | Type | Default | Description |
@@ -416,8 +429,16 @@ python manage.py apcore_serve [options]
 | `--explorer` | | Enable the browser-based Tool Explorer UI (HTTP only) |
 | `--explorer-prefix` | | URL prefix for the explorer UI (default: `/explorer`) |
 | `--allow-execute` | | Allow tool execution from the explorer UI |
+| `--explorer-title` | | Title shown in the Tool Explorer UI |
+| `--explorer-project-name` | | Project name shown in the Tool Explorer UI |
+| `--explorer-project-url` | | Project URL linked from the Tool Explorer UI |
 | `--validate-inputs` | | Enable input validation |
 | `--metrics` | | Enable Prometheus `/metrics` endpoint |
+| `--observability` | | Auto-wire metrics + usage collection and `/api/usage` endpoints |
+| `--strategy` | | Pipeline strategy (`standard`, `internal`, `testing`, `performance`, `minimal`) |
+| `--output-format` | | Tabular tool-result output (`json`, `csv`, `jsonl`) |
+| `--no-redact-output` | | Disable redaction of sensitive fields in tool results |
+| `--trace` | | Enable per-step pipeline timing traces |
 | `--log-level` | | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
 | `--tags` | | Filter modules by tags (comma-separated) |
 | `--prefix` | | Filter modules by ID prefix |

@@ -112,6 +112,25 @@ def get_executor() -> Any:
     return _executor
 
 
+def _resolve_dotted_callable(dotted_path: str | None) -> Any | None:
+    """Resolve a dotted path (e.g. ``apcore_toolkit.to_markdown``) to an object.
+
+    Returns None if the path is empty or cannot be imported/resolved. Mirrors
+    the resolver used by the ``apcore_serve`` command so the embedded server
+    interprets ``APCORE_OUTPUT_FORMATTER`` identically.
+    """
+    if not dotted_path:
+        return None
+    module_path, sep, attr_name = dotted_path.rpartition(".")
+    if not sep or not module_path:
+        return None
+    try:
+        mod = importlib.import_module(module_path)
+        return getattr(mod, attr_name)
+    except (ImportError, AttributeError):
+        return None
+
+
 def _resolve_config(data: dict[str, Any] | None) -> Any:
     """Create an Executor Config from a dict.
 
@@ -238,23 +257,31 @@ def start_embedded_server() -> Any | None:
         if version is not None:
             kwargs["version"] = version
 
-        # v0.4.0 params
         metrics_collector = get_metrics_collector()
         if metrics_collector is not None:
             kwargs["metrics_collector"] = metrics_collector
-        if settings.serve_validate_inputs:
-            kwargs["validate_inputs"] = settings.serve_validate_inputs
+        if settings.serve_validate_inputs or settings.validate_inputs:
+            kwargs["validate_inputs"] = True
         if settings.serve_tags:
             kwargs["tags"] = settings.serve_tags
         if settings.serve_prefix:
             kwargs["prefix"] = settings.serve_prefix
 
-        # JWT authentication (apcore-mcp 0.7.0+)
+        # Async task bridge (apcore-mcp 0.14.0+): size the in-process task
+        # manager from the same APCORE_TASK_* settings used by AsyncTaskManager.
+        kwargs["async_max_concurrent"] = settings.task_max_concurrent
+        kwargs["async_max_tasks"] = settings.task_max_tasks
+
+        # JWT authentication (apcore-mcp 0.7.0+).
+        # MCPServer defaults ``require_auth=True`` (apcore-mcp 0.14.0+), so we
+        # must opt out explicitly when no authenticator is configured —
+        # otherwise the embedded server would reject every request.
+        authenticator = None
         if settings.jwt_secret is not None:
             try:
                 from apcore_mcp.auth import JWTAuthenticator
 
-                kwargs["authenticator"] = JWTAuthenticator(
+                authenticator = JWTAuthenticator(
                     settings.jwt_secret,
                     algorithms=[settings.jwt_algorithm],
                     audience=settings.jwt_audience,
@@ -265,12 +292,52 @@ def start_embedded_server() -> Any | None:
                     "apcore-mcp >= 0.7.0 is required for JWT authentication; "
                     "APCORE_JWT_SECRET will be ignored"
                 )
+        if authenticator is not None:
+            kwargs["authenticator"] = authenticator
+            kwargs["require_auth"] = True
+        else:
+            kwargs["require_auth"] = False
 
-        # Output formatter (apcore-mcp 0.10.0+)
-        if settings.output_formatter is not None:
-            formatter = _resolve_dotted_callable(settings.output_formatter)
-            if formatter is not None:
-                kwargs["output_formatter"] = formatter
+        # Pipeline / output features. apcore-mcp 0.17.0+ gives the non-blocking
+        # ``MCPServer`` full parity with the blocking ``serve()`` path, so the
+        # embedded server can now use output formatting, pipeline strategy,
+        # observability, redaction and tracing — previously these were only
+        # available via ``manage.py apcore_serve``.
+        output_formatter = _resolve_dotted_callable(settings.output_formatter)
+        if settings.output_formatter and output_formatter is None:
+            logger.warning(
+                "Could not resolve APCORE_OUTPUT_FORMATTER '%s'; the embedded "
+                "MCP server will emit raw JSON.",
+                settings.output_formatter,
+            )
+        if output_formatter is not None:
+            kwargs["output_formatter"] = output_formatter
+        if settings.serve_output_format is not None:
+            kwargs["output_format"] = settings.serve_output_format
+        if settings.serve_strategy is not None:
+            kwargs["strategy"] = settings.serve_strategy
+        if settings.serve_observability:
+            kwargs["observability"] = True
+        # ``redact_output`` defaults to True in MCPServer; only override to
+        # disable it (APCORE_SERVE_REDACT_OUTPUT = False).
+        if settings.serve_redact_output is False:
+            kwargs["redact_output"] = False
+        if settings.serve_trace:
+            kwargs["trace"] = True
+
+        # Explorer UI (apcore-mcp 0.17.0+ on MCPServer). Only meaningful for
+        # HTTP transports; MCPServer ignores it for stdio.
+        if settings.explorer_enabled:
+            kwargs["explorer"] = True
+            kwargs["explorer_prefix"] = settings.explorer_prefix
+            if settings.explorer_allow_execute:
+                kwargs["allow_execute"] = True
+            if settings.explorer_title is not None:
+                kwargs["explorer_title"] = settings.explorer_title
+            if settings.explorer_project_name is not None:
+                kwargs["explorer_project_name"] = settings.explorer_project_name
+            if settings.explorer_project_url is not None:
+                kwargs["explorer_project_url"] = settings.explorer_project_url
 
         server = MCPServer(registry_or_executor, **kwargs)
         server.start()
@@ -373,18 +440,6 @@ def _reset_extension_manager() -> None:
     global _ext_manager
     with _ext_manager_lock:
         _ext_manager = None
-
-
-def _resolve_dotted_callable(dotted_path: str) -> Any | None:
-    """Resolve a dotted path like 'apcore_toolkit.to_markdown' to a callable."""
-    module_path, sep, attr_name = dotted_path.rpartition(".")
-    if not sep or not module_path:
-        return None
-    try:
-        mod = importlib.import_module(module_path)
-        return getattr(mod, attr_name)
-    except (ImportError, AttributeError):
-        return None
 
 
 def _reset_registry() -> None:

@@ -5,6 +5,117 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-30
+
+### Changed
+- **Bumped SDK floors** to `apcore>=0.25.0`, `apcore-toolkit>=0.9.0`, and
+  `apcore-mcp>=0.17.0` (in the `mcp`/`all` extras). This release of the
+  ecosystem fixes all three defects reported under 0.4.0 (see *SDK notes*),
+  so the corresponding downstream workarounds have been removed.
+
+### Fixed
+- **NinjaScanner module IDs no longer leak the django-ninja namespace.**
+  django-ninja >= 1.5 auto-generates operationIds as `{namespace}_{func_name}`
+  (e.g. `demo_api_list_tasks`). The scanner derived the action verb from the
+  operationId's *first* underscore segment, so every CRUD endpoint collapsed
+  onto `api.tasks.demo` (then `_2`…`_5` after de-duplication) instead of
+  `api.tasks.list` / `create` / `get` / `update` / `delete`. The verb is now
+  taken from the resolved view function name (`list_tasks` → `list`), which is
+  the reliable source. The example bindings have been regenerated accordingly.
+
+### Added
+- **Embedded MCP server now has full pipeline / Explorer parity.** apcore-mcp
+  0.17.0 adds the formatting, pipeline and Explorer parameters to the
+  non-blocking `MCPServer` class, so the embedded server (`APCORE_EMBEDDED_SERVER`)
+  now honours the same settings the `apcore_serve` command already did:
+  - `APCORE_OUTPUT_FORMATTER` — resolved and passed through (previously ignored
+    with a warning because `MCPServer` rejected it).
+  - `APCORE_SERVE_OUTPUT_FORMAT`, `APCORE_SERVE_STRATEGY`,
+    `APCORE_SERVE_OBSERVABILITY`, `APCORE_SERVE_REDACT_OUTPUT`,
+    `APCORE_SERVE_TRACE` — pipeline / observability controls.
+  - `APCORE_EXPLORER_ENABLED`, `APCORE_EXPLORER_PREFIX`,
+    `APCORE_EXPLORER_ALLOW_EXECUTE`, `APCORE_EXPLORER_TITLE`,
+    `APCORE_EXPLORER_PROJECT_NAME`, `APCORE_EXPLORER_PROJECT_URL` — Tool Explorer
+    UI and branding for HTTP transports.
+
+### Removed
+- **`extensions.py` import fallback.** apcore 0.25.0 restored
+  `MAX_MODULE_ID_LENGTH` / `RESERVED_WORDS` to the package root, so the
+  `try/except` fallback to `apcore.registry.registry` is gone — back to a plain
+  `from apcore import ...`.
+- **`NinjaScanner._normalize_response_keys` workaround.** apcore-toolkit 0.9.0
+  coerces OpenAPI response keys to strings before matching, so django-ninja's
+  integer status-code keys no longer crash `extract_output_schema`. The
+  end-to-end regression test (`test_integer_response_status_keys`) is retained.
+
+### SDK notes (previously-reported defects — now fixed upstream)
+- ✅ `apcore` 0.25.0 restored `MAX_MODULE_ID_LENGTH` / `RESERVED_WORDS` to the
+  package root (`apcore.__all__`).
+- ✅ `apcore-mcp` 0.17.0 gives the non-blocking `MCPServer` the same
+  `output_formatter` / `output_format` / `strategy` / `observability` /
+  `redact_output` / `trace` / explorer-branding parameters as the blocking
+  `serve()` API, removing the asymmetry that blocked embedded serving.
+- ✅ `apcore-toolkit` 0.9.0 `extract_output_schema` now handles integer OpenAPI
+  response-status keys (as emitted by django-ninja) instead of raising
+  `TypeError`.
+
+## [0.4.0] - 2026-06-22
+
+### Changed
+- **Bumped SDK floors** to the latest ecosystem release: `apcore>=0.24.0`,
+  `apcore-toolkit>=0.8.0`, and `apcore-mcp>=0.16.0` (in the `mcp`/`all` extras).
+
+### Fixed
+- **Restored import compatibility with apcore >= 0.18.** `MAX_MODULE_ID_LENGTH`
+  and `RESERVED_WORDS` were dropped from `apcore`'s public root (`apcore.__all__`)
+  and now live in `apcore.registry.registry`. The top-level import in
+  `extensions.py` raised `ImportError` on startup, which broke the entire Django
+  app (auto-discovery, executor assembly, every management command). The import
+  now falls back to the new location. See *SDK notes* below.
+- **Embedded MCP server no longer crashes when `APCORE_OUTPUT_FORMATTER` is set.**
+  The non-blocking `MCPServer` class (used for embedded serving) does not accept
+  an `output_formatter` argument — only the blocking `apcore_mcp.serve()` path
+  does. The setting is now ignored (with a warning) for the embedded server
+  instead of raising `TypeError`. Use `manage.py apcore_serve` for formatted
+  output. See *SDK notes* below.
+- **Embedded MCP server opts out of auth correctly.** `MCPServer` defaults
+  `require_auth=True` (apcore-mcp 0.14.0+); the embedded server now sets
+  `require_auth=False` when no JWT authenticator is configured, preserving the
+  previously-open behavior, and `True` when a JWT authenticator is present.
+
+### Added
+- **MCP pipeline / observability serving features** (apcore-mcp 0.13.0–0.16.0),
+  exposed via `APCORE_*` settings, `manage.py apcore_serve` flags, and
+  `DjangoApcore.serve()`:
+  - `APCORE_SERVE_STRATEGY` / `--strategy` — pipeline execution strategy
+    (`standard`, `internal`, `testing`, `performance`, `minimal`).
+  - `APCORE_SERVE_OUTPUT_FORMAT` / `--output-format` — tabular tool-result
+    output (`json`, `csv`, `jsonl`).
+  - `APCORE_SERVE_OBSERVABILITY` / `--observability` — auto-wire metrics + usage
+    collection and expose `/api/usage` endpoints.
+  - `APCORE_SERVE_REDACT_OUTPUT` (default `True`) / `--no-redact-output` —
+    control redaction of sensitive fields in tool results.
+  - `APCORE_SERVE_TRACE` / `--trace` — per-step pipeline timing traces.
+  - `APCORE_EXPLORER_TITLE`, `APCORE_EXPLORER_PROJECT_NAME`,
+    `APCORE_EXPLORER_PROJECT_URL` (with matching `--explorer-*` flags) — Tool
+    Explorer branding.
+- **Embedded MCP server async task bridge** (apcore-mcp 0.14.0+) — the in-process
+  task manager is sized from the existing `APCORE_TASK_MAX_CONCURRENT` /
+  `APCORE_TASK_MAX_TASKS` settings.
+
+### SDK notes (defects / rough edges reported upstream)
+- `apcore`: `MAX_MODULE_ID_LENGTH` / `RESERVED_WORDS` are no longer exported from
+  the package root nor re-exported from `apcore.registry`; they are only
+  reachable via the deeper `apcore.registry.registry` path. These were
+  previously part of the documented public surface — a silent breaking change
+  for integrators.
+- `apcore-mcp`: the `output_formatter`, `output_format`, `strategy`,
+  `observability`, `redact_output`, `trace`, and explorer-branding parameters
+  exist on the blocking `serve()` / `APCoreMCP` API but **not** on the
+  non-blocking `MCPServer` class used by framework integrations for embedded
+  serving. This asymmetry means embedded servers cannot use formatted output or
+  pipeline strategies.
+
 ## [0.3.1] - 2026-03-22
 
 ### Changed

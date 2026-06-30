@@ -821,3 +821,99 @@ class TestAIEnhanceSettings:
             ImproperlyConfigured, match="APCORE_AI_ENHANCE must be a boolean"
         ):
             get_apcore_settings()
+
+
+class TestServePipelineSettings:
+    """Settings added for apcore-mcp 0.13.0+ pipeline / observability features."""
+
+    def test_defaults(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.serve_output_format is None
+        assert s.serve_strategy is None
+        assert s.serve_observability is False
+        assert s.serve_redact_output is True  # redaction on by default
+        assert s.serve_trace is False
+        assert s.explorer_title is None
+        assert s.explorer_project_name is None
+        assert s.explorer_project_url is None
+
+    @override_settings(APCORE_SERVE_OUTPUT_FORMAT="csv")
+    def test_custom_output_format(self):
+        from django_apcore.settings import get_apcore_settings
+
+        assert get_apcore_settings().serve_output_format == "csv"
+
+    @override_settings(APCORE_SERVE_OUTPUT_FORMAT="xml")
+    def test_invalid_output_format(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_SERVE_OUTPUT_FORMAT must be one of"
+        ):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_STRATEGY="performance")
+    def test_custom_strategy(self):
+        from django_apcore.settings import get_apcore_settings
+
+        assert get_apcore_settings().serve_strategy == "performance"
+
+    @override_settings(APCORE_SERVE_STRATEGY="turbo")
+    def test_invalid_strategy(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_SERVE_STRATEGY must be one of"
+        ):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_OBSERVABILITY=True)
+    def test_custom_observability(self):
+        from django_apcore.settings import get_apcore_settings
+
+        assert get_apcore_settings().serve_observability is True
+
+    @override_settings(APCORE_SERVE_OBSERVABILITY="yes")
+    def test_observability_must_be_bool(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_SERVE_OBSERVABILITY must be a boolean"
+        ):
+            get_apcore_settings()
+
+    @override_settings(APCORE_SERVE_REDACT_OUTPUT=False)
+    def test_custom_redact_output(self):
+        from django_apcore.settings import get_apcore_settings
+
+        assert get_apcore_settings().serve_redact_output is False
+
+    @override_settings(APCORE_SERVE_TRACE=True)
+    def test_custom_trace(self):
+        from django_apcore.settings import get_apcore_settings
+
+        assert get_apcore_settings().serve_trace is True
+
+    @override_settings(
+        APCORE_EXPLORER_TITLE="My API",
+        APCORE_EXPLORER_PROJECT_NAME="proj",
+        APCORE_EXPLORER_PROJECT_URL="https://example.com",
+    )
+    def test_explorer_branding(self):
+        from django_apcore.settings import get_apcore_settings
+
+        s = get_apcore_settings()
+        assert s.explorer_title == "My API"
+        assert s.explorer_project_name == "proj"
+        assert s.explorer_project_url == "https://example.com"
+
+    @override_settings(APCORE_EXPLORER_TITLE=123)
+    def test_explorer_title_must_be_string(self):
+        from django_apcore.settings import get_apcore_settings
+
+        with pytest.raises(
+            ImproperlyConfigured, match="APCORE_EXPLORER_TITLE must be a string"
+        ):
+            get_apcore_settings()

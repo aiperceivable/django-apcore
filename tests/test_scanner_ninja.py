@@ -101,6 +101,58 @@ class TestNinjaScanner:
             == "api.tasks.delete"
         )
 
+    def test_module_id_namespace_prefixed_operation_id(self):
+        """django-ninja's "{namespace}_{func}" operationId must not leak.
+
+        django-ninja >= 1.5 emits operationIds like ``demo_api_list_tasks``.
+        The action verb must come from the resolved view function name
+        (``list_tasks`` -> ``list``), not the operationId's first segment
+        (which would wrongly yield ``demo`` and collapse every CRUD endpoint
+        onto ``api.tasks.demo``).
+        """
+        from django_apcore.scanners.ninja import NinjaScanner
+
+        scanner = NinjaScanner()
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks",
+                "GET",
+                operation_id="demo_api_list_tasks",
+                func_name="list_tasks",
+            )
+            == "api.tasks.list"
+        )
+        assert (
+            scanner._generate_module_id(
+                "/api",
+                "/tasks/{task_id}",
+                "DELETE",
+                operation_id="demo_api_delete_task",
+                func_name="delete_task",
+            )
+            == "api.tasks.delete"
+        )
+
+    def test_resolve_view_func_suffix_match(self):
+        """operationId resolves to a view func by exact then suffix match."""
+        from django_apcore.scanners.ninja import NinjaScanner
+
+        func_map = {"list_tasks": ("demo.api", "list_tasks")}
+        # Suffix match against namespace-prefixed operationId.
+        assert NinjaScanner._resolve_view_func("demo_api_list_tasks", func_map) == (
+            "demo.api",
+            "list_tasks",
+        )
+        # Exact match wins when present.
+        func_map["demo_api_list_tasks"] = ("demo.api", "list_tasks")
+        assert NinjaScanner._resolve_view_func("demo_api_list_tasks", func_map) == (
+            "demo.api",
+            "list_tasks",
+        )
+        # No operationId -> None.
+        assert NinjaScanner._resolve_view_func(None, func_map) is None
+
     def test_module_id_special_chars_replaced(self):
         """Special characters in paths are replaced with dots."""
         from django_apcore.scanners.ninja import NinjaScanner
@@ -322,6 +374,57 @@ class TestNinjaRefResolution:
         assert "title" in module.input_schema["required"]
         assert "id" in module.output_schema["properties"]
         assert "title" in module.output_schema["properties"]
+
+    def test_integer_response_status_keys(self):
+        """django-ninja emits int status-code keys; scanning must not crash.
+
+        Regression guard for the end-to-end scan path. apcore-toolkit >= 0.9.0
+        matches OpenAPI response keys after coercing them to strings, so the
+        integer status codes django-ninja produces are handled natively.
+        """
+        from unittest.mock import MagicMock
+
+        from django_apcore.scanners.ninja import NinjaScanner
+
+        scanner = NinjaScanner()
+        api = MagicMock()
+        api.__module__ = "test_module"
+
+        openapi_doc = {
+            "components": {
+                "schemas": {
+                    "TaskOut": {
+                        "type": "object",
+                        "properties": {"id": {"type": "integer"}},
+                    }
+                }
+            }
+        }
+        # Integer status-code key, exactly as produced by django-ninja >= 1.x.
+        operation = {
+            "operationId": "list_tasks",
+            "description": "List tasks",
+            "tags": ["tasks"],
+            "responses": {
+                200: {
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/TaskOut"}
+                        }
+                    }
+                }
+            },
+        }
+
+        module = scanner._operation_to_module(
+            api, "", "/api/tasks", "get", operation, {}, openapi_doc
+        )
+
+        assert module is not None
+        assert module.module_id == "api.tasks.list"
+        assert "id" in module.output_schema["properties"]
+        # The original operation dict must not be mutated by scanning.
+        assert 200 in operation["responses"]
 
 
 class TestNinjaImportGuard:

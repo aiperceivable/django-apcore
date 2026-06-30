@@ -471,6 +471,21 @@ class DjangoApcore:
         from django_apcore.management.commands.apcore_serve import serve
 
         s = self.settings
+        # Settings-derived defaults for the pipeline / observability features
+        # (apcore-mcp 0.13.0+). Explicit ``**kwargs`` always win.
+        defaults: dict[str, Any] = {
+            "output_format": s.serve_output_format,
+            "strategy": s.serve_strategy,
+            "observability": s.serve_observability,
+            "redact_output": s.serve_redact_output,
+            "trace": s.serve_trace,
+            "explorer_title": s.explorer_title,
+            "explorer_project_name": s.explorer_project_name,
+            "explorer_project_url": s.explorer_project_url,
+        }
+        for key, value in defaults.items():
+            kwargs.setdefault(key, value)
+
         serve(
             self.executor,
             transport=transport or s.serve_transport,

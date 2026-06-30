@@ -182,3 +182,139 @@ class TestEmbeddedServer:
         start_embedded_server()
         call_kwargs = mock_server_cls.call_args.kwargs
         assert "authenticator" not in call_kwargs
+        # MCPServer defaults require_auth=True (apcore-mcp 0.14.0+); the
+        # embedded server must opt out when there's no authenticator,
+        # otherwise it would reject every request.
+        assert call_kwargs["require_auth"] is False
+
+    @override_settings(APCORE_EMBEDDED_SERVER=True, APCORE_JWT_SECRET="test-secret")
+    @patch("apcore_mcp.auth.JWTAuthenticator")
+    @patch("apcore_mcp.MCPServer")
+    def test_require_auth_true_with_jwt(self, mock_server_cls, mock_jwt_cls):
+        """require_auth is True when a JWT authenticator is configured."""
+        mock_server_cls.return_value = MagicMock()
+        mock_jwt_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        assert mock_server_cls.call_args.kwargs["require_auth"] is True
+
+    @override_settings(
+        APCORE_EMBEDDED_SERVER=True,
+        APCORE_OUTPUT_FORMATTER="apcore_toolkit.to_markdown",
+    )
+    @patch("apcore_mcp.MCPServer")
+    def test_output_formatter_resolved_and_passed(self, mock_server_cls):
+        """apcore-mcp 0.17.0+ MCPServer accepts output_formatter; wire it through."""
+        import apcore_toolkit
+
+        mock_server_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert call_kwargs["output_formatter"] is apcore_toolkit.to_markdown
+
+    @override_settings(
+        APCORE_EMBEDDED_SERVER=True,
+        APCORE_OUTPUT_FORMATTER="apcore_toolkit.does_not_exist",
+    )
+    @patch("apcore_mcp.MCPServer")
+    def test_unresolvable_output_formatter_warns(self, mock_server_cls, caplog):
+        """An unresolvable formatter path is skipped with a warning, not a crash."""
+        import logging
+
+        mock_server_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        with caplog.at_level(logging.WARNING, logger="django_apcore"):
+            start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert "output_formatter" not in call_kwargs
+        assert any(
+            "Could not resolve APCORE_OUTPUT_FORMATTER" in r.message
+            for r in caplog.records
+        )
+
+    @override_settings(
+        APCORE_EMBEDDED_SERVER=True,
+        APCORE_SERVE_OUTPUT_FORMAT="csv",
+        APCORE_SERVE_STRATEGY="performance",
+        APCORE_SERVE_OBSERVABILITY=True,
+        APCORE_SERVE_REDACT_OUTPUT=False,
+        APCORE_SERVE_TRACE=True,
+    )
+    @patch("apcore_mcp.MCPServer")
+    def test_pipeline_features_wired(self, mock_server_cls):
+        """Pipeline/output settings reach MCPServer (apcore-mcp 0.17.0 parity)."""
+        mock_server_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert call_kwargs["output_format"] == "csv"
+        assert call_kwargs["strategy"] == "performance"
+        assert call_kwargs["observability"] is True
+        assert call_kwargs["redact_output"] is False
+        assert call_kwargs["trace"] is True
+
+    @override_settings(
+        APCORE_EMBEDDED_SERVER=True,
+        APCORE_EXPLORER_ENABLED=True,
+        APCORE_EXPLORER_PREFIX="/ui",
+        APCORE_EXPLORER_ALLOW_EXECUTE=True,
+        APCORE_EXPLORER_TITLE="My Explorer",
+        APCORE_EXPLORER_PROJECT_NAME="demo",
+        APCORE_EXPLORER_PROJECT_URL="https://example.com",
+    )
+    @patch("apcore_mcp.MCPServer")
+    def test_explorer_features_wired(self, mock_server_cls):
+        """Explorer settings reach MCPServer (apcore-mcp 0.17.0 parity)."""
+        mock_server_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert call_kwargs["explorer"] is True
+        assert call_kwargs["explorer_prefix"] == "/ui"
+        assert call_kwargs["allow_execute"] is True
+        assert call_kwargs["explorer_title"] == "My Explorer"
+        assert call_kwargs["explorer_project_name"] == "demo"
+        assert call_kwargs["explorer_project_url"] == "https://example.com"
+
+    @override_settings(
+        APCORE_EMBEDDED_SERVER=True,
+        APCORE_SERVE_REDACT_OUTPUT=True,
+    )
+    @patch("apcore_mcp.MCPServer")
+    def test_redact_output_default_not_overridden(self, mock_server_cls):
+        """redact_output defaults True in MCPServer; don't pass it when enabled."""
+        mock_server_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert "redact_output" not in call_kwargs
+
+    @override_settings(
+        APCORE_EMBEDDED_SERVER=True,
+        APCORE_TASK_MAX_CONCURRENT=4,
+        APCORE_TASK_MAX_TASKS=42,
+    )
+    @patch("apcore_mcp.MCPServer")
+    def test_async_task_params_from_settings(self, mock_server_cls):
+        """Async task bridge is sized from APCORE_TASK_* settings."""
+        mock_server_cls.return_value = MagicMock()
+
+        from django_apcore.registry import start_embedded_server
+
+        start_embedded_server()
+        call_kwargs = mock_server_cls.call_args.kwargs
+        assert call_kwargs["async_max_concurrent"] == 4
+        assert call_kwargs["async_max_tasks"] == 42

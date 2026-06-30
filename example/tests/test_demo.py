@@ -94,8 +94,9 @@ class TestDjangoApcoreEntryPoint:
 
         app = DjangoApcore()
         all_modules = app.scan(source="ninja")
-        filtered = app.scan(source="ninja", exclude=r"_2$")
+        filtered = app.scan(source="ninja", exclude=r"delete$")
         assert len(filtered) < len(all_modules)
+        assert not any(m.module_id.endswith("delete") for m in filtered)
 
 
 # ---------------------------------------------------------------------------

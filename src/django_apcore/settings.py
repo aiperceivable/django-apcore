@@ -25,6 +25,17 @@ DEFAULT_BINDING_PATTERN = "*.binding.yaml"
 VALID_TRANSPORTS = ("stdio", "streamable-http", "sse")
 VALID_SAMPLING_STRATEGIES = ("full", "proportional", "error_first", "off")
 
+# apcore-mcp 0.15.0+ tabular output formats for the MCP server.
+VALID_SERVE_OUTPUT_FORMATS = ("json", "csv", "jsonl")
+# apcore-mcp 0.13.0+ pipeline execution strategies.
+VALID_SERVE_STRATEGIES = (
+    "standard",
+    "internal",
+    "testing",
+    "performance",
+    "minimal",
+)
+
 DEFAULT_EXPLORER_ENABLED = False
 DEFAULT_EXPLORER_PREFIX = "/explorer"
 DEFAULT_EXPLORER_ALLOW_EXECUTE = False
@@ -70,6 +81,14 @@ class ApcoreSettings:
     explorer_enabled: bool
     explorer_prefix: str
     explorer_allow_execute: bool
+    explorer_title: str | None
+    explorer_project_name: str | None
+    explorer_project_url: str | None
+    serve_output_format: str | None
+    serve_strategy: str | None
+    serve_observability: bool
+    serve_redact_output: bool
+    serve_trace: bool
     hot_reload: bool
     hot_reload_paths: list[str]
     jwt_secret: str | None
@@ -432,6 +451,75 @@ def get_apcore_settings() -> ApcoreSettings:
             "APCORE_EXPLORER_ALLOW_EXECUTE must be a boolean." f" Got: {actual}"
         )
 
+    explorer_title = getattr(settings, "APCORE_EXPLORER_TITLE", None)
+    if explorer_title is not None and not isinstance(explorer_title, str):
+        actual = type(explorer_title).__name__
+        raise ImproperlyConfigured(
+            "APCORE_EXPLORER_TITLE must be a string." f" Got: {actual}"
+        )
+
+    explorer_project_name = getattr(settings, "APCORE_EXPLORER_PROJECT_NAME", None)
+    if explorer_project_name is not None and not isinstance(explorer_project_name, str):
+        actual = type(explorer_project_name).__name__
+        raise ImproperlyConfigured(
+            "APCORE_EXPLORER_PROJECT_NAME must be a string." f" Got: {actual}"
+        )
+
+    explorer_project_url = getattr(settings, "APCORE_EXPLORER_PROJECT_URL", None)
+    if explorer_project_url is not None and not isinstance(explorer_project_url, str):
+        actual = type(explorer_project_url).__name__
+        raise ImproperlyConfigured(
+            "APCORE_EXPLORER_PROJECT_URL must be a string." f" Got: {actual}"
+        )
+
+    # --- MCP server pipeline / output settings (apcore-mcp 0.13.0+) ---
+
+    serve_output_format = getattr(settings, "APCORE_SERVE_OUTPUT_FORMAT", None)
+    if (
+        serve_output_format is not None
+        and serve_output_format not in VALID_SERVE_OUTPUT_FORMATS
+    ):
+        choices = ", ".join(VALID_SERVE_OUTPUT_FORMATS)
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_OUTPUT_FORMAT must be one of:"
+            f" {choices}. Got: '{serve_output_format}'"
+        )
+
+    serve_strategy = getattr(settings, "APCORE_SERVE_STRATEGY", None)
+    if serve_strategy is not None and serve_strategy not in VALID_SERVE_STRATEGIES:
+        choices = ", ".join(VALID_SERVE_STRATEGIES)
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_STRATEGY must be one of:"
+            f" {choices}. Got: '{serve_strategy}'"
+        )
+
+    serve_observability = getattr(settings, "APCORE_SERVE_OBSERVABILITY", False)
+    if serve_observability is None:
+        serve_observability = False
+    if not isinstance(serve_observability, bool):
+        actual = type(serve_observability).__name__
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_OBSERVABILITY must be a boolean." f" Got: {actual}"
+        )
+
+    serve_redact_output = getattr(settings, "APCORE_SERVE_REDACT_OUTPUT", True)
+    if serve_redact_output is None:
+        serve_redact_output = True
+    if not isinstance(serve_redact_output, bool):
+        actual = type(serve_redact_output).__name__
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_REDACT_OUTPUT must be a boolean." f" Got: {actual}"
+        )
+
+    serve_trace = getattr(settings, "APCORE_SERVE_TRACE", False)
+    if serve_trace is None:
+        serve_trace = False
+    if not isinstance(serve_trace, bool):
+        actual = type(serve_trace).__name__
+        raise ImproperlyConfigured(
+            "APCORE_SERVE_TRACE must be a boolean." f" Got: {actual}"
+        )
+
     hot_reload = getattr(settings, "APCORE_HOT_RELOAD", False)
     if hot_reload is None:
         hot_reload = False
@@ -536,6 +624,14 @@ def get_apcore_settings() -> ApcoreSettings:
         explorer_enabled=explorer_enabled,
         explorer_prefix=explorer_prefix,
         explorer_allow_execute=explorer_allow_execute,
+        explorer_title=explorer_title,
+        explorer_project_name=explorer_project_name,
+        explorer_project_url=explorer_project_url,
+        serve_output_format=serve_output_format,
+        serve_strategy=serve_strategy,
+        serve_observability=serve_observability,
+        serve_redact_output=serve_redact_output,
+        serve_trace=serve_trace,
         hot_reload=hot_reload,
         hot_reload_paths=hot_reload_paths,
         jwt_secret=jwt_secret,

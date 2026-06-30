@@ -35,11 +35,19 @@ def _mock_settings(**overrides):
         "explorer_enabled": False,
         "explorer_prefix": "/explorer",
         "explorer_allow_execute": False,
+        "explorer_title": None,
+        "explorer_project_name": None,
+        "explorer_project_url": None,
         "jwt_secret": None,
         "jwt_algorithm": "HS256",
         "jwt_audience": None,
         "jwt_issuer": None,
         "output_formatter": None,
+        "serve_output_format": None,
+        "serve_strategy": None,
+        "serve_observability": False,
+        "serve_redact_output": True,
+        "serve_trace": False,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
@@ -412,6 +420,63 @@ class TestApcoreServeV010:
             call_command("apcore_serve")
             call_kwargs = mock_serve.call_args.kwargs
             assert call_kwargs.get("tags") == ["internal"]
+
+
+class TestApcoreServePipelineFeatures:
+    """apcore-mcp 0.13.0+ pipeline / observability options."""
+
+    def _run(self, *args, **settings_overrides):
+        with (
+            patch(f"{_CMD}.get_apcore_settings") as mock_settings,
+            patch(f"{_CMD}.get_registry") as mock_reg,
+            patch(f"{_CMD}.serve") as mock_serve,
+        ):
+            mock_settings.return_value = _mock_settings(**settings_overrides)
+            mock_reg.return_value = _mock_registry()
+            mock_serve.return_value = None
+            call_command("apcore_serve", *args)
+            return mock_serve.call_args.kwargs
+
+    def test_output_format_flag(self):
+        assert self._run("--output-format", "csv").get("output_format") == "csv"
+
+    def test_output_format_settings_fallback(self):
+        kwargs = self._run(serve_output_format="jsonl")
+        assert kwargs.get("output_format") == "jsonl"
+
+    def test_strategy_flag(self):
+        assert self._run("--strategy", "performance").get("strategy") == "performance"
+
+    def test_observability_flag(self):
+        assert self._run("--observability").get("observability") is True
+
+    def test_observability_default_false(self):
+        assert self._run().get("observability") is False
+
+    def test_trace_flag(self):
+        assert self._run("--trace").get("trace") is True
+
+    def test_redact_output_default_true(self):
+        assert self._run().get("redact_output") is True
+
+    def test_no_redact_output_flag(self):
+        assert self._run("--no-redact-output").get("redact_output") is False
+
+    def test_explorer_branding_passed(self):
+        kwargs = self._run(
+            "--explorer",
+            "--transport",
+            "streamable-http",
+            "--explorer-title",
+            "My API",
+            "--explorer-project-name",
+            "proj",
+            "--explorer-project-url",
+            "https://example.com",
+        )
+        assert kwargs.get("explorer_title") == "My API"
+        assert kwargs.get("explorer_project_name") == "proj"
+        assert kwargs.get("explorer_project_url") == "https://example.com"
 
 
 class TestApcoreServeJWT:

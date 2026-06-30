@@ -180,11 +180,22 @@ class NinjaScanner(BaseScanner):
         """Convert an OpenAPI operation to a ScannedModule."""
         try:
             operation_id = operation.get("operationId")
+
+            # Resolve the view function first: its name drives both the
+            # module-id action verb and the target. django-ninja >= 1.5
+            # auto-generates operationIds as "{namespace}_{func_name}"
+            # (e.g. "demo_api_list_tasks"), so the operationId's first segment
+            # is the namespace ("demo"), not the action. The resolved function
+            # name ("list_tasks") is the reliable source for the verb.
+            func_info = self._resolve_view_func(operation_id, func_map)
+            func_name = func_info[1] if func_info else None
+
             module_id = self._generate_module_id(
                 api_prefix,
                 path,
                 method,
                 operation_id,
+                func_name,
             )
             if not operation_id:
                 operation_id = module_id
@@ -200,16 +211,6 @@ class NinjaScanner(BaseScanner):
 
             tags = operation.get("tags", [])
 
-            # Resolve target from actual view function when available.
-            # Try exact operationId first, then suffix match (django-ninja
-            # generates operationId as "{prefix}_{func_name}" in the
-            # OpenAPI schema but may leave op.operation_id as None).
-            func_info = func_map.get(operation_id)
-            if not func_info:
-                for name, info in func_map.items():
-                    if operation_id.endswith(f"_{name}"):
-                        func_info = info
-                        break
             if func_info:
                 target = f"{func_info[0]}:{func_info[1]}"
             else:
@@ -244,22 +245,46 @@ class NinjaScanner(BaseScanner):
             )
             return None
 
+    @staticmethod
+    def _resolve_view_func(
+        operation_id: str | None,
+        func_map: dict[str, tuple[str, str]],
+    ) -> tuple[str, str] | None:
+        """Find the (module, func_name) for an operationId.
+
+        Tries an exact match first, then a suffix match — django-ninja
+        generates operationIds as ``{namespace}_{func_name}`` in the OpenAPI
+        schema (e.g. ``demo_api_list_tasks``) while indexing ``func_map`` by
+        the bare function name (``list_tasks``).
+        """
+        if not operation_id:
+            return None
+        func_info = func_map.get(operation_id)
+        if func_info:
+            return func_info
+        for name, info in func_map.items():
+            if operation_id.endswith(f"_{name}"):
+                return info
+        return None
+
     def _generate_module_id(
         self,
         api_prefix: str,
         path: str,
         method: str,
         operation_id: str | None = None,
+        func_name: str | None = None,
     ) -> str:
         """Generate module ID per BL-001.
 
         Format: {api_prefix}.{path_segments}.{action} lowercased,
         special chars replaced.
 
-        When *operation_id* is available (e.g. ``list_tasks``), the action
-        verb is extracted from it (``list``) instead of the raw HTTP method,
-        producing more semantic IDs like ``api.tasks.list`` instead of
-        ``api.tasks.get``.
+        The action verb is taken from the leading segment of *func_name* when
+        available (e.g. ``list_tasks`` -> ``list``), else from *operation_id*,
+        else the raw HTTP method. Preferring the view function's name avoids
+        django-ninja's namespace-prefixed operationIds (``demo_api_list_tasks``)
+        leaking the namespace (``demo``) in as the action.
         """
         # Clean prefix and path
         combined = f"{api_prefix}/{path}".strip("/")
@@ -269,10 +294,12 @@ class NinjaScanner(BaseScanner):
         combined = re.sub(r"[^a-zA-Z0-9]+", ".", combined)
         # Remove trailing/leading dots
         combined = combined.strip(".")
-        # Derive action: prefer first segment of operationId over HTTP method
+        # Derive action: prefer the view function's verb, then operationId,
+        # then fall back to the HTTP method.
         action = method
-        if operation_id:
-            parts = operation_id.split("_")
+        verb_source = func_name or operation_id
+        if verb_source:
+            parts = verb_source.split("_")
             if parts[0]:
                 action = parts[0]
         # Append action

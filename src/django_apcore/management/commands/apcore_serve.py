@@ -61,12 +61,23 @@ def serve(
     explorer: bool = False,
     explorer_prefix: str = "/explorer",
     allow_execute: bool = False,
+    explorer_title: str | None = None,
+    explorer_project_name: str | None = None,
+    explorer_project_url: str | None = None,
     authenticator: Any = None,
     output_formatter: Any = None,
+    output_format: str | None = None,
+    strategy: str | None = None,
+    observability: bool = False,
+    redact_output: bool = True,
+    trace: bool = False,
 ) -> None:
     """Delegate to apcore_mcp.serve().
 
-    This wrapper handles the lazy import of apcore-mcp-python.
+    This wrapper handles the lazy import of apcore-mcp-python and forwards the
+    pipeline/observability features added in apcore-mcp 0.13.0–0.16.0
+    (``strategy``, ``observability``, ``output_format``, ``redact_output``,
+    ``trace``) alongside the established transport and explorer options.
     """
     try:
         from apcore_mcp import serve as apcore_serve
@@ -102,10 +113,28 @@ def serve(
         kwargs["explorer"] = True
         kwargs["explorer_prefix"] = explorer_prefix
         kwargs["allow_execute"] = allow_execute
+        if explorer_title is not None:
+            kwargs["explorer_title"] = explorer_title
+        if explorer_project_name is not None:
+            kwargs["explorer_project_name"] = explorer_project_name
+        if explorer_project_url is not None:
+            kwargs["explorer_project_url"] = explorer_project_url
     if authenticator is not None:
         kwargs["authenticator"] = authenticator
     if output_formatter is not None:
         kwargs["output_formatter"] = output_formatter
+    if output_format is not None:
+        kwargs["output_format"] = output_format
+    if strategy is not None:
+        kwargs["strategy"] = strategy
+    if observability:
+        kwargs["observability"] = True
+    # ``redact_output`` defaults to True in apcore-mcp; only forward an
+    # explicit opt-out so we don't override Config Bus defaults needlessly.
+    if not redact_output:
+        kwargs["redact_output"] = False
+    if trace:
+        kwargs["trace"] = True
 
     apcore_serve(registry_or_executor, **kwargs)
 
@@ -242,6 +271,83 @@ class Command(BaseCommand):
                 "(e.g., 'apcore_toolkit.to_markdown'). "
                 "Default: APCORE_OUTPUT_FORMATTER setting."
             ),
+        )
+        parser.add_argument(
+            "--output-format",
+            type=str,
+            default=None,
+            dest="output_format",
+            choices=["json", "csv", "jsonl"],
+            help=(
+                "Tabular output format for tool results (apcore-mcp 0.15.0+). "
+                "Default: APCORE_SERVE_OUTPUT_FORMAT setting."
+            ),
+        )
+        parser.add_argument(
+            "--strategy",
+            type=str,
+            default=None,
+            dest="strategy",
+            choices=["standard", "internal", "testing", "performance", "minimal"],
+            help=(
+                "Pipeline execution strategy (apcore-mcp 0.13.0+). "
+                "Default: APCORE_SERVE_STRATEGY setting."
+            ),
+        )
+        parser.add_argument(
+            "--observability",
+            action="store_true",
+            default=None,
+            dest="observability",
+            help=(
+                "Auto-wire metrics + usage collection and expose /api/usage "
+                "endpoints (apcore-mcp 0.14.0+). "
+                "Default: APCORE_SERVE_OBSERVABILITY setting."
+            ),
+        )
+        parser.add_argument(
+            "--no-redact-output",
+            action="store_true",
+            default=None,
+            dest="no_redact_output",
+            help=(
+                "Disable redaction of sensitive fields in tool results "
+                "(redaction is ON by default in apcore-mcp 0.13.0+)."
+            ),
+        )
+        parser.add_argument(
+            "--trace",
+            action="store_true",
+            default=None,
+            dest="trace",
+            help=(
+                "Enable per-step pipeline timing traces (apcore-mcp 0.13.0+). "
+                "Default: APCORE_SERVE_TRACE setting."
+            ),
+        )
+        parser.add_argument(
+            "--explorer-title",
+            type=str,
+            default=None,
+            dest="explorer_title",
+            help="Title shown in the Tool Explorer UI. "
+            "Default: APCORE_EXPLORER_TITLE setting.",
+        )
+        parser.add_argument(
+            "--explorer-project-name",
+            type=str,
+            default=None,
+            dest="explorer_project_name",
+            help="Project name shown in the Tool Explorer UI. "
+            "Default: APCORE_EXPLORER_PROJECT_NAME setting.",
+        )
+        parser.add_argument(
+            "--explorer-project-url",
+            type=str,
+            default=None,
+            dest="explorer_project_url",
+            help="Project URL linked from the Tool Explorer UI. "
+            "Default: APCORE_EXPLORER_PROJECT_URL setting.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -442,6 +548,38 @@ class Command(BaseCommand):
                 f"[django-apcore] Output formatter: {output_formatter_path}"
             )
 
+        # Resolve pipeline / observability options (apcore-mcp 0.13.0+)
+        output_format = options.get("output_format") or settings.serve_output_format
+        strategy = options.get("strategy") or settings.serve_strategy
+
+        observability_flag = options.get("observability")
+        observability = (
+            observability_flag
+            if observability_flag is not None
+            else settings.serve_observability
+        )
+
+        trace_flag = options.get("trace")
+        trace = trace_flag if trace_flag is not None else settings.serve_trace
+
+        # --no-redact-output overrides the (default-on) setting.
+        no_redact_flag = options.get("no_redact_output")
+        redact_output = False if no_redact_flag else settings.serve_redact_output
+
+        # Explorer branding metadata
+        explorer_title = options.get("explorer_title") or settings.explorer_title
+        explorer_project_name = (
+            options.get("explorer_project_name") or settings.explorer_project_name
+        )
+        explorer_project_url = (
+            options.get("explorer_project_url") or settings.explorer_project_url
+        )
+
+        if observability and verbosity >= 1:
+            self.stdout.write(
+                "[django-apcore] Observability (metrics + usage) enabled."
+            )
+
         # Delegate to apcore-mcp
         try:
             serve(
@@ -461,8 +599,16 @@ class Command(BaseCommand):
                 explorer=explorer_enabled,
                 explorer_prefix=explorer_prefix,
                 allow_execute=allow_execute,
+                explorer_title=explorer_title,
+                explorer_project_name=explorer_project_name,
+                explorer_project_url=explorer_project_url,
                 authenticator=authenticator,
                 output_formatter=output_formatter,
+                output_format=output_format,
+                strategy=strategy,
+                observability=observability,
+                redact_output=redact_output,
+                trace=trace,
             )
         except ImportError as e:
             msg = (
