@@ -173,6 +173,44 @@ class TestSetupExtensions:
         acl = ext_mgr.get("acl")
         assert acl is None
 
+    def test_acl_loaded_and_registered_when_path_set(self, tmp_path):
+        """Positive seam: APCORE_ACL_PATH -> ACL.load -> ExtensionManager.
+
+        Complements test_no_acl_when_path_is_none (the disabled path). This is
+        the one ACL link unique to the integration: apcore's own ACL tests have
+        no Django settings layer, so only this repo can prove that a configured
+        APCORE_ACL_PATH actually loads a *functional* ACL and registers it for
+        executor assembly. Guards against silent breakage if ACL.load drifts.
+        """
+        from apcore import ACL
+
+        from django_apcore.extensions import setup_extensions
+
+        acl_file = tmp_path / "acl.yaml"
+        acl_file.write_text(
+            "version: '1.0'\n"
+            "default_effect: deny\n"
+            "rules:\n"
+            "  - callers: ['alice']\n"
+            "    targets: ['api.tasks.*']\n"
+            "    effect: allow\n",
+            encoding="utf-8",
+        )
+
+        settings = MagicMock()
+        settings.middlewares = []
+        settings.acl_path = str(acl_file)
+        settings.tracing = None
+        settings.module_validators = []
+
+        ext_mgr = setup_extensions(settings)
+        acl = ext_mgr.get("acl")
+
+        assert isinstance(acl, ACL)
+        # The YAML rules are in effect: alice may reach api.tasks.*, others not.
+        assert acl.check("alice", "api.tasks.list") is True
+        assert acl.check("bob", "api.tasks.list") is False
+
     def test_no_span_exporter_when_tracing_is_none(self):
         from django_apcore.extensions import setup_extensions
 

@@ -221,6 +221,101 @@ app = DjangoApcore.get_instance()
 | `app.task_manager` | `AsyncTaskManager` | Async task manager |
 | `app.settings` | `ApcoreSettings` | Validated Django settings |
 
+## Access Control (ACL)
+
+django-apcore reuses apcore's built-in ACL engine — you do **not** write any
+permission code yourself. You declare rules in a YAML file, point a setting at
+it, and every `app.call(...)` is checked before the target runs. The integration's
+only job is to translate the Django request into the identity the ACL evaluates
+against.
+
+### How it fits together
+
+```
+Django request ─▶ DjangoContextFactory ─▶ apcore Identity ─▶ ACL.check() ─▶ allow / deny
+                  (username, groups,        (id, roles,
+                   is_staff, ...)             attrs)
+```
+
+`DjangoContextFactory` maps the authenticated user onto an apcore `Identity`:
+
+| apcore `Identity` field | Django source |
+|-------------------------|---------------|
+| `id` | `request.user.username` |
+| `roles` | `request.user.groups` (group names, as a tuple) |
+| `attrs` | `{"is_staff": ..., "is_superuser": ...}` |
+
+So **a user's Django Groups become their ACL roles** — group-based authorization
+works out of the box with no extra wiring.
+
+### 1. Write the ACL YAML
+
+Rules are evaluated first-match-wins; `default_effect` applies when nothing
+matches. Use `conditions.roles` to require the caller hold a given Django group:
+
+```yaml
+version: "1.0"
+default_effect: deny
+rules:
+  # Anyone may read.
+  - callers: ["*"]
+    targets: ["api.tasks.list", "api.tasks.get"]
+    effect: allow
+
+  # Only members of the "editors" group may mutate.
+  - callers: ["*"]
+    targets: ["api.tasks.create", "api.tasks.update", "api.tasks.delete"]
+    conditions:
+      roles: ["editors"]
+    effect: allow
+```
+
+- `targets` match against module IDs (the same IDs `app.list_modules()` returns),
+  and support `*` wildcards.
+- `callers` match against `Identity.id` (the username). Use `["*"]` to match any
+  caller and gate purely on `conditions.roles`.
+- `conditions.roles` passes when the caller's roles intersect the listed values —
+  i.e. the user belongs to at least one of those Django groups.
+
+### 2. Point a setting at it
+
+```python
+# settings.py
+APCORE_ACL_PATH = BASE_DIR / "acl.yaml"   # str or Path
+```
+
+That's all — `setup_extensions()` loads the file via `ACL.load(...)`, registers it
+on the `ExtensionManager`, and the `Executor` enforces it on every call.
+
+### 3. Call with the request attached
+
+The check only has an identity to evaluate when you pass the request through, so
+the user can be resolved:
+
+```python
+def update_task(request, task_id: int):
+    # If request.user is not in the "editors" group, apcore raises a
+    # permission error here *before* api.tasks.update executes.
+    result = app.call("api.tasks.update", {"id": task_id, ...}, request=request)
+    return JsonResponse(result)
+```
+
+### Two identity sources, one ACL
+
+The same ACL file governs both entry points — only the identity source differs:
+
+| Entry point | Identity comes from | `roles` populated from |
+|-------------|---------------------|------------------------|
+| Django view (`app.call(..., request=request)`) | the Django session/user | the user's **Django Groups** |
+| MCP server (`app.serve(...)`) | the validated **JWT** (`APCORE_JWT_*`) | the JWT's role/scope claims |
+
+### Fail-closed by default
+
+If no request is passed (or the user is anonymous), there is no identity, so any
+rule with `conditions.roles` cannot match — access falls through to
+`default_effect`. Keep `default_effect: deny` so unauthenticated or
+unrecognised callers are denied rather than allowed.
+
 ## Installation
 
 Install with pip, choosing the extras you need:
