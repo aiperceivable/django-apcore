@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any
 from apcore_toolkit.output.registry_writer import RegistryWriter
 
 if TYPE_CHECKING:
-    from apcore import FunctionModule
     from apcore_toolkit.types import ScannedModule
 
 logger = logging.getLogger("django_apcore")
@@ -41,6 +40,7 @@ class DjangoRegistryWriter(RegistryWriter):
         dry_run: bool = False,
         verify: bool = False,
         verifiers: Any = None,
+        allowed_prefixes: list[str] | None = None,
     ) -> list[Any]:
         """Register scanned modules, replacing any that already exist."""
         from apcore_toolkit.output.types import WriteResult
@@ -55,7 +55,7 @@ class DjangoRegistryWriter(RegistryWriter):
                 results.append(WriteResult(module_id=mod.module_id))
                 continue
 
-            fm = self._to_function_module(mod)
+            fm = self._to_function_module(mod, allowed_prefixes=allowed_prefixes)
 
             # Unregister first if already exists (auto-discovery may have
             # registered from YAML bindings on startup)
@@ -85,41 +85,29 @@ class DjangoRegistryWriter(RegistryWriter):
             results.append(result)
         return results
 
-    def _to_function_module(self, mod: ScannedModule) -> FunctionModule:
-        """Convert a ScannedModule to a FunctionModule, adapting Django views."""
-        from apcore import FunctionModule as FuncModule
-        from apcore_toolkit.pydantic_utils import resolve_target
+    # NOTE: this writer no longer overrides ``_to_function_module`` — doing so
+    # dropped ``annotations`` and silently disabled approval/ACL gating (that
+    # keys on ``requires_approval``) for scanned Django routes. Field mapping,
+    # including annotations, is centralized in the toolkit base writer's
+    # ``_build_function_module``; here we override only the narrow hooks.
 
-        func = resolve_target(mod.target)
-        sig = inspect.signature(func)
-        params = list(sig.parameters.keys())
-
-        # If first param is 'request', wrap the view function
+    def _adapt_func(self, func: Any, mod: ScannedModule) -> Any:
+        """Strip a leading ``request`` parameter from Django view functions —
+        apcore's ``FunctionModule`` cannot introspect the untyped ``request``.
+        Applied before the base writer's Pydantic flattening."""
+        params = list(inspect.signature(func).parameters.keys())
         if params and params[0] == "request":
-            func = _adapt_view_func(func)
+            return _adapt_view_func(func)
+        return func
 
-        # Apply Pydantic flattening
-        try:
-            from apcore_toolkit import flatten_pydantic_params
+    def _build_input_schema(self, mod: ScannedModule) -> Any:
+        """Explicit input model from the scanned JSON Schema so
+        ``FunctionModule`` skips function introspection."""
+        return _schema_to_pydantic(f"{mod.module_id}_Input", mod.input_schema)
 
-            func = flatten_pydantic_params(func)
-        except ImportError:
-            pass
-
-        # Build dynamic Pydantic models from the scanned JSON Schema
-        # so FunctionModule skips function introspection
-        input_model = _schema_to_pydantic(f"{mod.module_id}_Input", mod.input_schema)
-        output_model = _schema_to_pydantic(f"{mod.module_id}_Output", mod.output_schema)
-
-        return FuncModule(
-            func=func,
-            module_id=mod.module_id,
-            description=mod.description,
-            tags=mod.tags,
-            version=mod.version,
-            input_schema=input_model,
-            output_schema=output_model,
-        )
+    def _build_output_schema(self, mod: ScannedModule) -> Any:
+        """Explicit output model from the scanned JSON Schema."""
+        return _schema_to_pydantic(f"{mod.module_id}_Output", mod.output_schema)
 
 
 def _adapt_view_func(func: Any) -> Any:

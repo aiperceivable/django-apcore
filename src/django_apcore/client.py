@@ -502,6 +502,194 @@ class DjangoApcore:
             **kwargs,
         )
 
+    # ------------------------------------------------------------------
+    # CLI generation
+    # ------------------------------------------------------------------
+
+    def create_cli(
+        self,
+        *,
+        prog_name: str = "apcore-cli",
+        title: str = "Django API",
+        version: str = "0.0.0",
+        base_url: str = "http://localhost:8000",
+        auth_header_factory: Callable[[], dict[str, str]] | None = None,
+        timeout: float = 60.0,
+        scan_source: str = "ninja",
+        include: str | None = None,
+        exclude: str | None = None,
+        binding_path: str | None = None,
+        help_text_max_length: int = 1000,
+        max_content_width: int | None = None,
+        docs_url: str | None = None,
+        verbose_help: bool = False,
+    ) -> Any:
+        """Create an apcore-cli Click group with all Django API routes as commands.
+
+        Scans Django routes (via the ``ninja`` / ``drf`` scanners), registers them
+        as HTTP proxy modules, and returns a Click group ready to be invoked. Each
+        CLI command forwards requests to the running Django API at ``base_url``.
+
+        Requires ``django-apcore[cli]`` (adds ``apcore-cli`` and ``click``).
+
+        Args:
+            prog_name: CLI program name shown in help text.
+            title: Human-readable API title used in the CLI description.
+            version: Version string for ``--version`` / man pages.
+            base_url: Base URL of the running Django server the commands proxy to.
+            auth_header_factory: Optional callable returning auth headers
+                (e.g. ``{"Authorization": "Bearer xxx"}``).
+            timeout: HTTP request timeout in seconds.
+            scan_source: Scanner backend (``'ninja'`` or ``'drf'``).
+            include: Regex pattern — only include matching module IDs.
+            exclude: Regex pattern — skip matching module IDs.
+            binding_path: Path to a ``.binding.yaml`` file or directory. When set,
+                ``DisplayResolver`` applies the ``display`` overlay (alias,
+                description, guidance) to scanned modules before commands are
+                built (§5.13).
+            help_text_max_length: Max characters for CLI help text per command.
+            max_content_width: Max width for CLI help output; overrides Click's
+                default when command names are long and truncate descriptions.
+            docs_url: Base URL for online docs, embedded in ``--help`` and man pages.
+            verbose_help: When ``True``, show built-in apcore options in ``--help``.
+
+        Returns:
+            A Click Group that can be invoked with ``cli(standalone_mode=True)``.
+
+        Example::
+
+            from django_apcore import DjangoApcore
+
+            apcore = DjangoApcore()
+            cli = apcore.create_cli(prog_name="myapp-cli", base_url="http://localhost:8000")
+            cli(standalone_mode=True)
+        """
+        import sys
+
+        try:
+            import click
+            from apcore_cli.cli import (
+                GroupedModuleGroup,
+                set_docs_url,
+                set_verbose_help,
+            )
+            from apcore_cli.discovery import register_discovery_commands
+            from apcore_cli.shell import configure_man_help, register_completion_command
+        except ImportError:
+            raise ImportError(
+                "apcore-cli is required for create_cli(). "
+                "Install with: pip install django-apcore[cli]"
+            ) from None
+
+        from apcore import Executor, Registry
+        from apcore_toolkit.output.http_proxy_writer import HTTPProxyRegistryWriter
+
+        # apcore-cli module-level settings. Pre-parse sys.argv so --verbose also
+        # takes effect when passed alongside --help (Click processes --help before
+        # the group callback fires). The last create_cli() call wins.
+        effective_verbose = verbose_help or "--verbose" in sys.argv[1:]
+        set_verbose_help(effective_verbose)
+        set_docs_url(docs_url)
+
+        # 1. Scan Django routes.
+        modules = self.scan(source=scan_source, include=include, exclude=exclude)
+        logger.info("Scanned %d API routes", len(modules))
+
+        # 1b. Apply display overlay from binding.yaml (§5.13).
+        if binding_path is not None:
+            from apcore_toolkit.display import DisplayResolver
+
+            modules = DisplayResolver().resolve(modules, binding_path=binding_path)
+
+        # 2. Register as HTTP proxy modules that forward to the running API.
+        registry = Registry()
+        writer = HTTPProxyRegistryWriter(
+            base_url=base_url,
+            auth_header_factory=auth_header_factory,
+            timeout=timeout,
+        )
+        results = writer.write(modules, registry)
+        registered = sum(1 for r in results if r.verified)
+        skipped = sum(1 for r in results if not r.verified)
+        if skipped:
+            logger.info("Registered %d modules (%d skipped)", registered, skipped)
+        else:
+            logger.info("Registered %d modules", registered)
+
+        executor = Executor(registry)
+
+        # 3. Build the Click group.
+        ctx_settings: dict[str, Any] = {}
+        if max_content_width is not None:
+            ctx_settings["max_content_width"] = max_content_width
+        effective_width = max_content_width
+
+        _cli_description = (
+            f"{prog_name} — CLI for {title}.\n\n"
+            "Tips:\n"
+            f"  {prog_name} --help --verbose  Show built-in apcore options\n"
+            f"  {prog_name} --help --man      Generate a man page\n"
+            f"  {prog_name} list              List all commands\n"
+            f"  {prog_name} describe ID       Show a command's schema"
+        )
+
+        @click.group(
+            cls=GroupedModuleGroup,
+            registry=registry,
+            executor=executor,
+            help_text_max_length=help_text_max_length,
+            name=prog_name,
+            help=_cli_description,
+            context_settings=ctx_settings,
+        )
+        @click.version_option(version=version, prog_name=prog_name)
+        @click.option(
+            "--log-level",
+            default=None,
+            type=click.Choice(
+                ["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False
+            ),
+            help="Log verbosity.",
+        )
+        @click.option(
+            "--verbose",
+            "verbose_flag",
+            is_flag=True,
+            default=False,
+            is_eager=True,
+            help="Show all options in help output (including built-in apcore options).",
+        )
+        def cli(log_level: str | None = None, verbose_flag: bool = False) -> None:
+            if log_level is not None:
+                level = getattr(logging, log_level.upper(), logging.WARNING)
+                logging.getLogger().setLevel(level)
+            if verbose_flag:
+                set_verbose_help(True)
+
+        register_discovery_commands(cli, registry)
+        register_completion_command(cli, prog_name=prog_name)
+        configure_man_help(
+            cli,
+            prog_name=prog_name,
+            version=version,
+            description=_cli_description,
+            docs_url=docs_url,
+        )
+
+        # Use effective_width so descriptions are not truncated on narrow terminals.
+        if effective_width is not None:
+            _original_format_commands = cli.format_commands
+
+            def _wide_format_commands(ctx: Any, formatter: Any) -> None:
+                original_width = formatter.width
+                formatter.width = max(formatter.width, effective_width)
+                _original_format_commands(ctx, formatter)
+                formatter.width = original_width
+
+            cli.format_commands = _wide_format_commands  # type: ignore[method-assign]
+
+        return cli
+
     def to_openai_tools(
         self,
         *,

@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-08
+
+Restores reachable approval/ACL governance for scanned routes, adds apcore-cli integration
+(`create_cli`) and a runnable ACL demo — bringing django-apcore to feature parity with
+fastapi-apcore. All 526 tests pass.
+
+### Added
+- **`DjangoApcore.create_cli(...)`** — turns your scanned Django routes (via the `ninja` / `drf`
+  scanners) into an [apcore-cli](https://github.com/aiperceivable/apcore-cli) Click CLI whose
+  commands proxy to the running Django server (`list` / `describe` + one command per route). New
+  `[cli]` extra (`apcore-cli>=0.10.3`, `click>=8.0`). Covered by `tests/test_create_cli.py`.
+- **ACL demo (`examples/acl_demo/`)** — a runnable Django project demonstrating apcore ACL
+  enforcement on module calls: an `acl.yaml` (admins may call anything; `orders.list` public; else
+  denied), views that map `ACLDeniedError` → HTTP 403, and an `X-Roles` demo auth shortcut mapped
+  to an apcore `Identity` via `DjangoContextFactory`. Run with
+  `python examples/acl_demo/manage.py runserver`; covered end-to-end by `tests/test_acl_demo.py`.
+- Conformance regression test running the shared `apcore_toolkit.conformance` verifier against
+  `DjangoRegistryWriter` (`tests/test_registry_writer.py::TestAnnotationConformance`).
+
+### Fixed
+- **Behavioral annotations were dropped during registration** (fixes #1). `DjangoRegistryWriter`
+  overrode `_to_function_module` and built `FunctionModule` without forwarding `annotations`,
+  so every `registry.get_definition(...).annotations` was `None` and approval/ACL gating that
+  keys on `requires_approval` **silently never fired for scanned Django routes**. The writer no
+  longer overrides `_to_function_module`; it overrides only the toolkit base writer's narrow
+  hooks — `_adapt_func` (strips the leading `request` param) and `_build_input_schema` /
+  `_build_output_schema` (explicit schema models) — and inherits the centralized, all-fields
+  `_build_function_module`, so annotations can no longer be dropped. `write` also now threads
+  `allowed_prefixes`.
+
+### Changed
+- Dependency floor raised: `apcore-toolkit >= 0.10.0` — provides the centralized `RegistryWriter`
+  hooks (`_adapt_func` / `_build_input_schema` / `_build_output_schema`) and the shared
+  `apcore_toolkit.conformance` verifier.
+- Dependency floor raised: `apcore-mcp >= 0.17.1` (in the `mcp` / `all` extras) — the
+  apcore-toolkit 0.10.0-compatible patch.
+
 ## [0.4.0] - 2026-06-30
 
 ### Changed

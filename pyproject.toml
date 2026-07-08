@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-apcore"
-version = "0.4.0"
+version = "0.5.0"
 description = "Django integration for apcore — scan existing REST APIs and serve them as MCP tools for AI agents"
 readme = "README.md"
 license = "MIT"
@@ -41,18 +41,21 @@ classifiers = [
 dependencies = [
     "django>=4.2",
     "apcore>=0.25.0",
-    "apcore-toolkit>=0.9.0",
+    "apcore-toolkit>=0.10.0",
     "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 ninja = ["django-ninja>=1.0"]
 drf = ["drf-spectacular>=0.27"]
-mcp = ["apcore-mcp>=0.17.0"]
+mcp = ["apcore-mcp>=0.17.1"]
+cli = ["apcore-cli>=0.10.3", "click>=8.0"]
 all = [
     "django-ninja>=1.0",
     "drf-spectacular>=0.27",
-    "apcore-mcp>=0.17.0",
+    "apcore-mcp>=0.17.1",
+    "apcore-cli>=0.10.3",
+    "click>=8.0",
 ]
 dev = [
     "pytest>=8.0",

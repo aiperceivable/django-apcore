@@ -20,6 +20,7 @@ The core philosophy is **scan, don't rewrite**: instead of manually defining MCP
 - **Output verification** — validate generated files for syntax and structure
 - **AI enhancement** — auto-enhance module metadata via local SLMs (Ollama/vLLM)
 - **Serve as MCP tools** via apcore-mcp (stdio / streamable-http / SSE transports)
+- **Generate a CLI** — `create_cli()` turns scanned routes into an apcore-cli Click CLI that proxies to your running server (`[cli]` extra)
 - **Output formatting** — Markdown or custom formatters for LLM-friendly results
 - **Pluggable middleware pipeline** — logging, tracing, metrics, and custom middleware
 - **YAML-based access control (ACL)** for fine-grained module permissions
@@ -202,6 +203,31 @@ app.serve(transport="streamable-http", port=9090, explorer=True)
 tools = app.to_openai_tools(tags=["public"], strict=True)
 ```
 
+### Generate a CLI
+
+`create_cli()` turns your scanned Django routes into an [apcore-cli](https://github.com/aiperceivable/apcore-cli) Click CLI whose commands proxy to the running Django server. Requires the `[cli]` extra (`pip install django-apcore[cli]`).
+
+```python
+# cli.py — a standalone CLI for your API
+from django_apcore import DjangoApcore
+
+app = DjangoApcore()
+cli = app.create_cli(
+    prog_name="myapp-cli",
+    base_url="http://localhost:8000",   # your running Django server
+    scan_source="ninja",                 # or "drf"
+)
+
+if __name__ == "__main__":
+    cli(standalone_mode=True)
+```
+
+```bash
+myapp-cli list                 # list all commands (one per route)
+myapp-cli describe orders.list # schema + annotations for a command
+myapp-cli orders list          # invoke — proxies GET /orders to base_url
+```
+
 ### Singleton access
 
 ```python
@@ -340,7 +366,7 @@ pip install django-apcore[mcp]
 |---------|---------|---------|
 | `django` | `>= 4.2` | Core framework |
 | `apcore` | `>= 0.13.0` | Protocol SDK |
-| `apcore-toolkit` | `>= 0.2.0` | Scanner, writer, and formatting utilities |
+| `apcore-toolkit` | `>= 0.10.0` | Scanner, writer, and formatting utilities |
 | `pyyaml` | `>= 6.0` | YAML binding files |
 
 ### Optional Dependencies

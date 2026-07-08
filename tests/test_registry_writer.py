@@ -280,3 +280,38 @@ def _dummy_view(request, name: str) -> dict:
 def _dummy_plain_func(name: str) -> dict:
     """A plain function (no request param) for testing."""
     return {"name": name}
+
+
+def _governed_view(request, order_id: int) -> dict:
+    """A Django-style view (leading ``request``) whose behavioral annotations
+    must survive registration."""
+    return {"order_id": order_id}
+
+
+class TestAnnotationConformance:
+    """Regression for the dropped-annotations bug: DjangoRegistryWriter must
+    preserve behavioral annotations so approval/ACL gating (keyed on
+    ``requires_approval``) actually fires. Uses the shared toolkit conformance
+    verifier — the same check every adapter runs."""
+
+    def test_annotations_preserved_via_shared_verifier(self) -> None:
+        from apcore import ModuleAnnotations
+        from apcore_toolkit.conformance import assert_annotations_preserved
+
+        from django_apcore.output.registry_writer import DjangoRegistryWriter
+
+        mod = ScannedModule(
+            module_id="orders.delete_order",
+            description="Delete an order",
+            input_schema={
+                "type": "object",
+                "properties": {"order_id": {"type": "integer"}},
+            },
+            output_schema={"type": "object"},
+            tags=["orders"],
+            target="tests.test_registry_writer:_governed_view",
+            annotations=ModuleAnnotations(destructive=True, requires_approval=True),
+        )
+        # Registers through DjangoRegistryWriter (which strips `request` via the
+        # _adapt_func hook) and asserts requires_approval/destructive round-trip.
+        assert_annotations_preserved(DjangoRegistryWriter(), mod, Registry())
