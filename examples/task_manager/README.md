@@ -60,7 +60,7 @@ pip install -e ".[all]"
 ### 1. Scan routes
 
 ```bash
-cd example
+cd examples/task_manager
 export DJANGO_SETTINGS_MODULE=demo.settings
 
 # Generate YAML bindings (with verification)
@@ -169,7 +169,7 @@ python -c "import jwt; print(jwt.encode({'sub': 'demo-user', 'roles': ['admin']}
 ## Docker
 
 ```bash
-cd example
+cd examples/task_manager
 docker compose up --build
 ```
 
@@ -188,7 +188,7 @@ docker compose down
 ## Running Tests
 
 ```bash
-cd example
+cd examples/task_manager
 python -m pytest tests/ -v
 ```
 
@@ -213,7 +213,7 @@ python -m pytest tests/ -v
 ## Project Structure
 
 ```
-example/
+examples/task_manager/
 ├── Dockerfile              # Python 3.11 image with django-apcore installed
 ├── docker-compose.yml      # web + mcp services
 ├── entrypoint.sh           # scan → serve pipeline

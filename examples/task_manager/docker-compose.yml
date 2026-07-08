@@ -1,8 +1,8 @@
 services:
   web:
     build:
-      context: ..
-      dockerfile: example/Dockerfile
+      context: ../..
+      dockerfile: examples/task_manager/Dockerfile
     command: >
       sh -c "python manage.py migrate --run-syncdb &&
              python manage.py runserver 0.0.0.0:8000"
@@ -13,8 +13,8 @@ services:
 
   mcp:
     build:
-      context: ..
-      dockerfile: example/Dockerfile
+      context: ../..
+      dockerfile: examples/task_manager/Dockerfile
     command: bash entrypoint.sh
     ports:
       - "9090:9090"

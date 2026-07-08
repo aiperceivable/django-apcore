@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -e ".[all]"
 
 ENV DJANGO_SETTINGS_MODULE=demo.settings
 
-WORKDIR /app/example
+WORKDIR /app/examples/task_manager

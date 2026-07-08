@@ -72,7 +72,7 @@ pythonpath = ["src", "."]
 testpaths = ["tests"]
 addopts = "--ds tests.settings"
 django_find_project = false
-norecursedirs = ["example"]
+norecursedirs = ["examples"]
 
 
 [tool.apdev]

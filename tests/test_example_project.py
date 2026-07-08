@@ -1,4 +1,4 @@
-"""Static validation tests for the example/ demo project.
+"""Static validation tests for the examples/task_manager demo project.
 
 These tests verify file structure, syntax, and configuration without
 needing the demo Django environment to be running.
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-EXAMPLE_DIR = Path(__file__).resolve().parent.parent / "example"
+EXAMPLE_DIR = Path(__file__).resolve().parent.parent / "examples" / "task_manager"
 
 REQUIRED_FILES = [
     "Dockerfile",

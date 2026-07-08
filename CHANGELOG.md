@@ -36,6 +36,9 @@ fastapi-apcore. All 526 tests pass.
   `allowed_prefixes`.
 
 ### Changed
+- **Examples consolidated under `examples/`** (aligning with fastapi-apcore). The Task Manager
+  demo project moved `example/` → `examples/task_manager/`, joining the new `examples/acl_demo/`.
+  Docker/compose paths, the demo README, and `norecursedirs` were updated accordingly.
 - Dependency floor raised: `apcore-toolkit >= 0.10.0` — provides the centralized `RegistryWriter`
   hooks (`_adapt_func` / `_build_input_schema` / `_build_output_schema`) and the shared
   `apcore_toolkit.conformance` verifier.

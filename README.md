@@ -642,10 +642,10 @@ def my_view(request):
 
 ## Demo Project
 
-The `example/` directory contains a Task Manager API demo showcasing all major features.
+The [`examples/task_manager/`](examples/task_manager/) directory contains a Task Manager API demo showcasing all major features. See also [`examples/acl_demo/`](examples/acl_demo/) for a focused ACL-enforcement example.
 
 ```bash
-cd example
+cd examples/task_manager
 docker compose up --build
 ```
 
@@ -654,7 +654,7 @@ docker compose up --build
 | `web` | http://localhost:8000 | Django API server (django-ninja) |
 | `mcp` | http://localhost:9090 | MCP server with Tool Explorer |
 
-See [`example/README.md`](example/README.md) for full setup instructions and `DjangoApcore` usage examples.
+See [`examples/task_manager/README.md`](examples/task_manager/README.md) for full setup instructions and `DjangoApcore` usage examples.
 
 ## Requirements
 
