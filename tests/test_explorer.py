@@ -253,15 +253,15 @@ class TestServeCommandExplorer:
 
             from django.core.management import call_command
 
-            out = StringIO()
+            err = StringIO()
             call_command(
                 "apcore_serve",
                 "--transport",
                 "streamable-http",
                 "--explorer",
-                stdout=out,
+                stderr=err,
             )
-            assert "Explorer" in out.getvalue()
+            assert "Explorer" in err.getvalue()
 
 
 class TestServeWrapperExplorer:

@@ -400,7 +400,7 @@ class Command(BaseCommand):
 
         # Load registry or executor
         if verbosity >= 1:
-            self.stdout.write("[django-apcore] Loading apcore registry...")
+            self.stderr.write("[django-apcore] Loading apcore registry...")
 
         # Use executor if any executor-related settings are configured
         use_executor = (
@@ -431,8 +431,8 @@ class Command(BaseCommand):
             )
 
         if verbosity >= 1:
-            self.stdout.write(f"[django-apcore] {module_count} modules registered.")
-            self.stdout.write(
+            self.stderr.write(f"[django-apcore] {module_count} modules registered.")
+            self.stderr.write(
                 f"[django-apcore] Starting MCP server '{name}' via {transport}..."
             )
 
@@ -443,15 +443,18 @@ class Command(BaseCommand):
                 "the server is not behind a firewall."
             )
 
-        stdout = self.stdout
+        # Diagnostics go to stderr: under the stdio transport, stdout is the MCP
+        # JSON-RPC stream, and any stray text corrupts it (strict clients like
+        # Claude Desktop reject the whole stream).
+        diag = self.stderr
 
         def on_startup() -> None:
             if verbosity >= 1:
-                stdout.write("[django-apcore] Server ready.")
+                diag.write("[django-apcore] Server ready.")
 
         def on_shutdown() -> None:
             if verbosity >= 1:
-                stdout.write("[django-apcore] Server stopped.")
+                diag.write("[django-apcore] Server stopped.")
 
         # Resolve metrics_collector
         metrics_collector = None
@@ -485,7 +488,7 @@ class Command(BaseCommand):
             and transport in ("streamable-http", "sse")
             and verbosity >= 1
         ):
-            self.stdout.write(
+            self.stderr.write(
                 f"[django-apcore] Tool Explorer enabled at {explorer_prefix}"
             )
 
@@ -529,7 +532,7 @@ class Command(BaseCommand):
             )
 
             if verbosity >= 1:
-                self.stdout.write("[django-apcore] JWT authentication enabled.")
+                self.stderr.write("[django-apcore] JWT authentication enabled.")
 
         # Resolve output formatter
         output_formatter_path = (
@@ -544,7 +547,7 @@ class Command(BaseCommand):
                 f"'{output_formatter_path}'. Results will be raw JSON."
             )
         elif output_formatter is not None and verbosity >= 1:
-            self.stdout.write(
+            self.stderr.write(
                 f"[django-apcore] Output formatter: {output_formatter_path}"
             )
 
@@ -576,7 +579,7 @@ class Command(BaseCommand):
         )
 
         if observability and verbosity >= 1:
-            self.stdout.write(
+            self.stderr.write(
                 "[django-apcore] Observability (metrics + usage) enabled."
             )
 

@@ -40,7 +40,7 @@ classifiers = [
 ]
 dependencies = [
     "django>=4.2",
-    "apcore>=0.25.0",
+    "apcore>=0.26.0",
     "apcore-toolkit>=0.10.0",
     "pyyaml>=6.0",
 ]
@@ -48,12 +48,12 @@ dependencies = [
 [project.optional-dependencies]
 ninja = ["django-ninja>=1.0"]
 drf = ["drf-spectacular>=0.27"]
-mcp = ["apcore-mcp>=0.17.1"]
+mcp = ["apcore-mcp>=0.17.2"]
 cli = ["apcore-cli>=0.10.3", "click>=8.0"]
 all = [
     "django-ninja>=1.0",
     "drf-spectacular>=0.27",
-    "apcore-mcp>=0.17.1",
+    "apcore-mcp>=0.17.2",
     "apcore-cli>=0.10.3",
     "click>=8.0",
 ]

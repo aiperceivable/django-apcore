@@ -25,6 +25,7 @@ fastapi-apcore. All 526 tests pass.
   `DjangoRegistryWriter` (`tests/test_registry_writer.py::TestAnnotationConformance`).
 
 ### Fixed
+- **`apcore_serve` corrupted the stdio MCP stream** — startup diagnostics (`[django-apcore] ... modules registered` / `Starting MCP server ...` / `Server ready`) were written to `self.stdout`, but under the `stdio` transport stdout **is** the MCP JSON-RPC stream. Strict clients (e.g. Claude Desktop) rejected the connection (`... is not valid JSON`). These diagnostics now go to `self.stderr`.
 - **Behavioral annotations were dropped during registration** (fixes #1). `DjangoRegistryWriter`
   overrode `_to_function_module` and built `FunctionModule` without forwarding `annotations`,
   so every `registry.get_definition(...).annotations` was `None` and approval/ACL gating that
@@ -42,8 +43,11 @@ fastapi-apcore. All 526 tests pass.
 - Dependency floor raised: `apcore-toolkit >= 0.10.0` — provides the centralized `RegistryWriter`
   hooks (`_adapt_func` / `_build_input_schema` / `_build_output_schema`) and the shared
   `apcore_toolkit.conformance` verifier.
-- Dependency floor raised: `apcore-mcp >= 0.17.1` (in the `mcp` / `all` extras) — the
-  apcore-toolkit 0.10.0-compatible patch.
+- Dependency floor raised: `apcore >= 0.26.0` (was `>= 0.25.0`) — the 0.26.0 execution-time
+  governance layer (Execution Policy §7.9, governance events, no-handler fail-loud).
+- Dependency floor raised: `apcore-mcp >= 0.17.2` (in the `mcp` / `all` extras) — adds the
+  elicitation approval fix (non-empty renderable boolean schema so form-rendering clients like
+  Claude Code render the approve/deny control instead of failing closed).
 
 ## [0.4.0] - 2026-06-30
 

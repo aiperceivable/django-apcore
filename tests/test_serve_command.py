@@ -173,7 +173,8 @@ class TestApcoreServeCommand:
             call_command("apcore_serve", "--name", "my-server")
 
     def test_output_prefix(self):
-        """Command output uses [django-apcore] prefix."""
+        """Command diagnostics use the [django-apcore] prefix (on stderr — stdout
+        is reserved for the MCP JSON-RPC stream under the stdio transport)."""
         with (
             patch(f"{_CMD}.get_apcore_settings") as mock_settings,
             patch(f"{_CMD}.get_registry") as mock_reg,
@@ -183,9 +184,9 @@ class TestApcoreServeCommand:
             mock_reg.return_value = _mock_registry()
             mock_serve.return_value = None
 
-            out = StringIO()
-            call_command("apcore_serve", stdout=out)
-            assert "[django-apcore]" in out.getvalue()
+            err = StringIO()
+            call_command("apcore_serve", stderr=err)
+            assert "[django-apcore]" in err.getvalue()
 
 
 class TestApcoreServeV02:
