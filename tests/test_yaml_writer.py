@@ -164,3 +164,65 @@ class TestYAMLWriter:
         result = writer.write(sample_modules, str(tmp_path), verify=True)
 
         assert all(r.verified for r in result)
+
+
+def _binding_target(value: str = "x") -> dict:
+    return {"value": value}
+
+
+class TestBindingLoaderCompatibility:
+    """Generated bindings must be accepted by apcore's strict loader."""
+
+    def test_generated_binding_omits_keys_rejected_by_core(self, tmp_path):
+        from django_apcore.output.yaml_writer import YAMLWriter
+        from django_apcore.scanners.base import ScannedModule
+
+        module = ScannedModule(
+            module_id="api.items.get",
+            description="Get an item.",
+            input_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            target=f"{__name__}:_binding_target",
+            tags=[],
+            examples=[],
+            suggested_alias="items.get",
+            display={"alias": "Items Get"},
+        )
+        YAMLWriter().write([module], str(tmp_path))
+
+        binding = yaml.safe_load(next(tmp_path.glob("*.binding.yaml")).read_text())
+        entry = binding["bindings"][0]
+        for key in ("examples", "suggested_alias", "display"):
+            assert key not in entry
+
+    def test_generated_binding_loads_with_core_binding_loader(self, tmp_path):
+        from apcore import BindingLoader, Registry
+
+        from django_apcore.output.yaml_writer import YAMLWriter
+        from django_apcore.scanners.base import ScannedModule
+
+        module = ScannedModule(
+            module_id="api.items.get",
+            description="Get an item.",
+            input_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
+            target=f"{__name__}:_binding_target",
+            tags=[],
+        )
+        YAMLWriter().write([module], str(tmp_path))
+
+        registry = Registry()
+        loaded = BindingLoader().load_binding_dir(str(tmp_path), registry)
+        assert [m.module_id for m in loaded] == ["api.items.get"]

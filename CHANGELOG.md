@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-11-03
+
+Dependency uplift to the aligned apcore 0.32.2 / apcore-toolkit 0.14.1 /
+apcore-mcp 0.23.3 / apcore-cli 0.12.6 release train. All 528 tests pass.
+
+### Changed
+
+- **Dependency floors raised**: `apcore >= 0.32.2` (was `>= 0.26.0`),
+  `apcore-toolkit >= 0.14.1` (was `>= 0.10.0`), `apcore-mcp >= 0.23.3` (was
+  `>= 0.17.2`), and `apcore-cli >= 0.12.6` (was `>= 0.10.3`).
+- **YAML bindings emitted by `apcore_scan --output yaml` are now accepted by
+  apcore 0.32's strict `BindingLoader`.** The toolkit writer always emitted an
+  `examples` key (and, when set, `suggested_alias` / `display`) which apcore
+  0.32 rejects as unknown binding-entry fields (PROTOCOL_SPEC §5.12.2,
+  `BINDING_FILE_INVALID`). `DjangoApcore`'s `YAMLWriter` now drops those keys,
+  and `django_apcore.output.get_writer("yaml")` returns it. Without this,
+  startup discovery silently skipped every generated binding file.
+- Regenerated the `examples/task_manager` binding files without the rejected
+  keys.
+
 ## [0.5.0] - 2026-07-15
 
 Restores reachable approval/ACL governance for scanned routes, adds apcore-cli integration

@@ -365,8 +365,8 @@ pip install django-apcore[mcp]
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `django` | `>= 4.2` | Core framework |
-| `apcore` | `>= 0.13.0` | Protocol SDK |
-| `apcore-toolkit` | `>= 0.10.0` | Scanner, writer, and formatting utilities |
+| `apcore` | `>= 0.32.2` | Protocol SDK |
+| `apcore-toolkit` | `>= 0.14.1` | Scanner, writer, and formatting utilities |
 | `pyyaml` | `>= 6.0` | YAML binding files |
 
 ### Optional Dependencies
@@ -375,7 +375,8 @@ pip install django-apcore[mcp]
 |-------|---------|---------|---------|
 | `ninja` | `django-ninja` | `>= 1.0` | django-ninja endpoint scanning |
 | `drf` | `drf-spectacular` | `>= 0.27` | DRF endpoint scanning via OpenAPI |
-| `mcp` | `apcore-mcp` | `>= 0.10.0` | MCP server, transport layer, JWT auth, Tool Explorer |
+| `mcp` | `apcore-mcp` | `>= 0.23.3` | MCP server, transport layer, JWT auth, Tool Explorer |
+| `cli` | `apcore-cli` | `>= 0.12.6` | CLI generation via `create_cli()` |
 
 ## Configuration
 
