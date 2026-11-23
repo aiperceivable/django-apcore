@@ -13,6 +13,8 @@ from apcore_toolkit.openapi import extract_input_schema, extract_output_schema
 from apcore_toolkit.scanner import BaseScanner
 from apcore_toolkit.types import ScannedModule
 
+from django_apcore.scanners.base import apply_effective_proxy_inputs
+
 logger = logging.getLogger("django_apcore")
 
 
@@ -30,6 +32,8 @@ class NinjaScanner(BaseScanner):
         self,
         include: str | None = None,
         exclude: str | None = None,
+        *,
+        for_proxy: bool = False,
         **kwargs: Any,
     ) -> list[ScannedModule]:
         """Scan all django-ninja endpoints.
@@ -37,6 +41,8 @@ class NinjaScanner(BaseScanner):
         Args:
             include: Regex pattern to include (matches against module_id).
             exclude: Regex pattern to exclude.
+            for_proxy: When ``True``, attach effective OpenAPI parameter
+                metadata used by ``create_cli()`` to validate HTTP forwarding.
 
         Returns:
             List of ScannedModule instances.
@@ -45,7 +51,7 @@ class NinjaScanner(BaseScanner):
             ImportError: If django-ninja is not installed.
         """
         self._check_ninja_installed()
-        modules = self._scan_all_endpoints()
+        modules = self._scan_all_endpoints(for_proxy=for_proxy)
         return self.filter_modules(modules, include, exclude)
 
     def _check_ninja_installed(self) -> None:
@@ -90,7 +96,7 @@ class NinjaScanner(BaseScanner):
             if hasattr(pattern, "url_patterns"):
                 self._find_apis(pattern.url_patterns, apis, api_class)
 
-    def _scan_all_endpoints(self) -> list[ScannedModule]:
+    def _scan_all_endpoints(self, *, for_proxy: bool = False) -> list[ScannedModule]:
         """Scan all discovered NinjaAPI instances."""
         apis = self._discover_ninja_apis()
         modules: list[ScannedModule] = []
@@ -100,6 +106,8 @@ class NinjaScanner(BaseScanner):
             # so we don't need urls_namespace as an additional prefix.
             api_prefix = ""
             func_map = self._build_view_func_map(api)
+            schema: dict[str, Any] | None = None
+            api_modules: list[ScannedModule] = []
             try:
                 schema = api.get_openapi_schema()
                 paths = schema.get("paths", {})
@@ -123,9 +131,13 @@ class NinjaScanner(BaseScanner):
                                 schema,
                             )
                             if module:
-                                modules.append(module)
+                                api_modules.append(module)
             except Exception:
                 logger.warning("Error scanning NinjaAPI instance", exc_info=True)
+
+            if for_proxy and schema is not None and api_modules:
+                api_modules = apply_effective_proxy_inputs(api_modules, [schema])
+            modules.extend(api_modules)
 
         # Deduplicate IDs using toolkit's improved method
         if modules:

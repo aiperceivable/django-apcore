@@ -174,7 +174,9 @@ class TestDjangoApcoreScan:
             result = app.scan(source="ninja", include="users")
             assert len(result) == 1
             mock_get.assert_called_once_with("ninja")
-            mock_scanner.scan.assert_called_once_with(include="users", exclude=None)
+            mock_scanner.scan.assert_called_once_with(
+                include="users", exclude=None, for_proxy=False
+            )
 
 
 class TestDjangoApcoreSingleton:

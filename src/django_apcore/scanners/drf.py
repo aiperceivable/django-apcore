@@ -13,6 +13,8 @@ from apcore_toolkit.openapi import extract_input_schema, extract_output_schema
 from apcore_toolkit.scanner import BaseScanner
 from apcore_toolkit.types import ScannedModule
 
+from django_apcore.scanners.base import apply_effective_proxy_inputs
+
 logger = logging.getLogger("django_apcore")
 
 
@@ -30,6 +32,8 @@ class DRFScanner(BaseScanner):
         self,
         include: str | None = None,
         exclude: str | None = None,
+        *,
+        for_proxy: bool = False,
         **kwargs: Any,
     ) -> list[ScannedModule]:
         """Scan all DRF endpoints via drf-spectacular.
@@ -37,6 +41,8 @@ class DRFScanner(BaseScanner):
         Args:
             include: Regex pattern to include (matches against module_id).
             exclude: Regex pattern to exclude.
+            for_proxy: When ``True``, attach effective OpenAPI parameter
+                metadata used by ``create_cli()`` to validate HTTP forwarding.
 
         Returns:
             List of ScannedModule instances.
@@ -47,6 +53,8 @@ class DRFScanner(BaseScanner):
         self._check_drf_installed()
         schema = self._get_openapi_schema()
         modules = self._schema_to_modules(schema)
+        if for_proxy:
+            modules = apply_effective_proxy_inputs(modules, [schema])
         return self.filter_modules(modules, include, exclude)
 
     def _check_drf_installed(self) -> None:

@@ -228,6 +228,8 @@ myapp-cli describe orders.list # schema + annotations for a command
 myapp-cli orders list          # invoke — proxies GET /orders to base_url
 ```
 
+`create_cli()` runs a proxy preflight by default (`validate_proxy=True`). It resolves inherited and referenced OpenAPI parameters through apcore-toolkit's effective-parameter scanner, then refuses to register any operation the HTTP proxy cannot forward losslessly — for example a query parameter on a JSON-body `POST`, a body on a query-method route, or conflicting path/query/body names. The error names every offending module. Pass `validate_proxy=False` to keep the legacy best-effort behaviour.
+
 ### Singleton access
 
 ```python
@@ -365,8 +367,8 @@ pip install django-apcore[mcp]
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `django` | `>= 4.2` | Core framework |
-| `apcore` | `>= 0.32.2` | Protocol SDK |
-| `apcore-toolkit` | `>= 0.14.1` | Scanner, writer, and formatting utilities |
+| `apcore` | `>= 0.33.0` | Protocol SDK |
+| `apcore-toolkit` | `>= 0.15.0` | Scanner, writer, and formatting utilities |
 | `pyyaml` | `>= 6.0` | YAML binding files |
 
 ### Optional Dependencies
@@ -375,8 +377,8 @@ pip install django-apcore[mcp]
 |-------|---------|---------|---------|
 | `ninja` | `django-ninja` | `>= 1.0` | django-ninja endpoint scanning |
 | `drf` | `drf-spectacular` | `>= 0.27` | DRF endpoint scanning via OpenAPI |
-| `mcp` | `apcore-mcp` | `>= 0.23.3` | MCP server, transport layer, JWT auth, Tool Explorer |
-| `cli` | `apcore-cli` | `>= 0.12.6` | CLI generation via `create_cli()` |
+| `mcp` | `apcore-mcp` | `>= 0.23.4` | MCP server, transport layer, JWT auth, Tool Explorer |
+| `cli` | `apcore-cli` | `>= 0.14.1` | CLI generation via `create_cli()` |
 
 ## Configuration
 

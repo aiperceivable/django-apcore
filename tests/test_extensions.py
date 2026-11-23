@@ -278,3 +278,90 @@ class TestBuildSpanExporter:
 
         exporter = _build_span_exporter(False)
         assert exporter is None
+
+
+# ---------------------------------------------------------------------------
+# DjangoDiscoverer._adapt_view_module — rebuild fidelity
+# ---------------------------------------------------------------------------
+
+
+class TestAdaptViewModuleResources:
+    """Rebuilding a flattened module must keep its metadata and resources."""
+
+    def test_resources_survive_pydantic_flattening(self):
+        from apcore import FunctionModule, ModuleExample
+        from pydantic import BaseModel
+
+        from django_apcore.extensions import DjangoDiscoverer
+
+        class Body(BaseModel):
+            title: str
+
+        def create_item(body) -> dict:
+            return {"title": body.title}
+
+        # Set the annotation to the class object so ``typing.get_type_hints``
+        # can resolve it despite the nested definition.
+        create_item.__annotations__["body"] = Body
+
+        fm = FunctionModule(
+            func=create_item,
+            module_id="test.create_item",
+            description="Create an item",
+            documentation="Create docs",
+            tags=["items"],
+            annotations={"requires_approval": True},
+            metadata={"source": "binding"},
+            display={"alias": "create-item"},
+            examples=[ModuleExample(title="demo", inputs={"title": "x"})],
+            resources={"timeout": 1500},
+        )
+        adapted = DjangoDiscoverer._adapt_view_module(fm, FunctionModule)
+
+        assert adapted is not fm
+        assert adapted.resources == {"timeout": 1500}
+        assert adapted.documentation == "Create docs"
+        assert adapted.annotations is not None
+        assert adapted.annotations.requires_approval is True
+        assert adapted.metadata == {"source": "binding"}
+        assert adapted.display == {"alias": "create-item"}
+        assert adapted.examples == [ModuleExample(title="demo", inputs={"title": "x"})]
+
+    def test_resources_survive_view_adaptation(self):
+        from apcore import FunctionModule, ModuleExample
+        from pydantic import BaseModel
+
+        from django_apcore.extensions import DjangoDiscoverer
+
+        class Body(BaseModel):
+            title: str
+
+        def create_item(request: object, body) -> dict:
+            return {"title": body.title}
+
+        # Set the annotation to the class object so ``typing.get_type_hints``
+        # can resolve it despite the nested definition.
+        create_item.__annotations__["body"] = Body
+
+        fm = FunctionModule(
+            func=create_item,
+            module_id="test.create_item",
+            description="Create an item",
+            documentation="Create docs",
+            tags=["items"],
+            annotations={"requires_approval": True},
+            metadata={"source": "binding"},
+            display={"alias": "create-item"},
+            examples=[ModuleExample(title="demo", inputs={"title": "x"})],
+            resources={"timeout": 1500},
+        )
+        adapted = DjangoDiscoverer._adapt_view_module(fm, FunctionModule)
+
+        assert adapted is not fm
+        assert adapted.resources == {"timeout": 1500}
+        assert adapted.documentation == "Create docs"
+        assert adapted.annotations is not None
+        assert adapted.annotations.requires_approval is True
+        assert adapted.metadata == {"source": "binding"}
+        assert adapted.display == {"alias": "create-item"}
+        assert adapted.examples == [ModuleExample(title="demo", inputs={"title": "x"})]

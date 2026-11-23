@@ -467,3 +467,72 @@ class TestOpenAPIUtils:
         assert result["type"] == "array"
         assert result["items"]["type"] == "object"
         assert "id" in result["items"]["properties"]
+
+
+class TestApplyEffectiveProxyInputs:
+    """Tests for the toolkit 0.15.0 effective-parameter proxy enrichment."""
+
+    @staticmethod
+    def _spec() -> dict:
+        return {
+            "openapi": "3.0.0",
+            "info": {"title": "Test", "version": "1.0.0"},
+            "paths": {
+                "/orders/{order_id}": {
+                    "parameters": [
+                        {
+                            "name": "order_id",
+                            "in": "path",
+                            "required": True,
+                            "schema": {"type": "string"},
+                        }
+                    ],
+                    "get": {
+                        "operationId": "orders_retrieve",
+                        "parameters": [
+                            {
+                                "name": "expand",
+                                "in": "query",
+                                "schema": {"type": "boolean"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "ok"}},
+                    },
+                }
+            },
+        }
+
+    @staticmethod
+    def _module() -> object:
+        from django_apcore.scanners.base import ScannedModule
+
+        return ScannedModule(
+            module_id="orders.retrieve",
+            description="Retrieve an order",
+            input_schema={"type": "object", "properties": {}, "required": []},
+            output_schema={"type": "object", "properties": {}},
+            tags=["orders"],
+            target="shop.views:retrieve",
+            metadata={"http_method": "GET", "url_path": "/orders/{order_id}"},
+        )
+
+    def test_inherits_path_item_parameters(self):
+        from django_apcore.scanners.base import apply_effective_proxy_inputs
+
+        [module] = apply_effective_proxy_inputs([self._module()], [self._spec()])
+
+        assert set(module.input_schema["properties"]) == {"order_id", "expand"}
+        proxy_inputs = module.metadata["openapi"]["proxy_inputs"]
+        assert proxy_inputs["path"] == ["order_id"]
+        assert proxy_inputs["query"] == ["expand"]
+        # Django-owned fields are preserved.
+        assert module.module_id == "orders.retrieve"
+        assert module.target == "shop.views:retrieve"
+
+    def test_enriched_module_passes_preflight(self):
+        from apcore_toolkit import validate_effective_proxy_modules
+
+        from django_apcore.scanners.base import apply_effective_proxy_inputs
+
+        modules = apply_effective_proxy_inputs([self._module()], [self._spec()])
+        validate_effective_proxy_modules(modules)

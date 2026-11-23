@@ -37,7 +37,9 @@ class TestCreateCli:
         apcore = DjangoApcore()
         with patch.object(DjangoApcore, "scan", return_value=scanned):
             cli = apcore.create_cli(
-                prog_name="test-cli", base_url="http://localhost:8000"
+                prog_name="test-cli",
+                base_url="http://localhost:8000",
+                validate_proxy=False,
             )
         assert isinstance(cli, click.Group)
 
@@ -45,7 +47,9 @@ class TestCreateCli:
         apcore = DjangoApcore()
         with patch.object(DjangoApcore, "scan", return_value=scanned):
             cli = apcore.create_cli(
-                prog_name="test-cli", base_url="http://localhost:8000"
+                prog_name="test-cli",
+                base_url="http://localhost:8000",
+                validate_proxy=False,
             )
         result = CliRunner().invoke(cli, ["--help"])
         assert result.exit_code == 0
@@ -55,7 +59,9 @@ class TestCreateCli:
         apcore = DjangoApcore()
         with patch.object(DjangoApcore, "scan", return_value=scanned):
             cli = apcore.create_cli(
-                prog_name="test-cli", base_url="http://localhost:8000"
+                prog_name="test-cli",
+                base_url="http://localhost:8000",
+                validate_proxy=False,
             )
         result = CliRunner().invoke(cli, ["list"])
         assert result.exit_code == 0
@@ -65,7 +71,9 @@ class TestCreateCli:
     def test_scan_source_forwarded(self, scanned):
         apcore = DjangoApcore()
         with patch.object(DjangoApcore, "scan", return_value=scanned) as mock_scan:
-            apcore.create_cli(prog_name="test-cli", scan_source="drf")
+            apcore.create_cli(
+                prog_name="test-cli", scan_source="drf", validate_proxy=False
+            )
         mock_scan.assert_called_once()
         assert mock_scan.call_args.kwargs.get("source") == "drf"
 
@@ -87,3 +95,65 @@ class TestCreateCli:
             pytest.raises(ImportError, match="django-apcore\\[cli\\]"),
         ):
             apcore.create_cli()
+
+
+class TestCreateCliProxyPreflight:
+    """create_cli() refuses operations the HTTP proxy cannot forward."""
+
+    @staticmethod
+    def _hazardous_module() -> ScannedModule:
+        return ScannedModule(
+            module_id="orders.create_order",
+            description="POST /orders",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": ["name"],
+            },
+            output_schema={"type": "object"},
+            tags=["orders"],
+            target="unused:proxy",
+            metadata={
+                "http_method": "POST",
+                "url_path": "/orders",
+                "openapi": {
+                    "proxy_inputs": {
+                        "path": [],
+                        "query": ["dry_run"],
+                        "body": ["name"],
+                        "problems": [],
+                    }
+                },
+            },
+        )
+
+    def test_rejects_query_parameter_on_json_body_method(self):
+        apcore = DjangoApcore()
+        with (
+            patch.object(DjangoApcore, "scan", return_value=[self._hazardous_module()]),
+            pytest.raises(ValueError, match="proxy preflight failed"),
+        ):
+            apcore.create_cli(prog_name="test-cli", base_url="http://localhost:8000")
+
+    def test_validate_proxy_false_keeps_legacy_behaviour(self):
+        apcore = DjangoApcore()
+        hazardous = [self._hazardous_module()]
+        with patch.object(DjangoApcore, "scan", return_value=hazardous):
+            cli = apcore.create_cli(
+                prog_name="test-cli",
+                base_url="http://localhost:8000",
+                validate_proxy=False,
+            )
+        assert isinstance(cli, click.Group)
+
+    def test_scan_receives_for_proxy_flag(self):
+        apcore = DjangoApcore()
+        with patch.object(DjangoApcore, "scan", return_value=[]) as mock_scan:
+            apcore.create_cli(
+                prog_name="test-cli",
+                base_url="http://localhost:8000",
+            )
+        assert mock_scan.call_args.kwargs.get("for_proxy") is True

@@ -422,6 +422,7 @@ class DjangoApcore:
         *,
         include: str | None = None,
         exclude: str | None = None,
+        for_proxy: bool = False,
     ) -> list[Any]:
         """Scan Django API endpoints and return ScannedModule instances.
 
@@ -429,6 +430,8 @@ class DjangoApcore:
             source: Scanner source ('ninja' or 'drf').
             include: Regex pattern to include.
             exclude: Regex pattern to exclude.
+            for_proxy: When ``True``, attach effective OpenAPI parameter
+                metadata used by :meth:`create_cli` to validate HTTP forwarding.
 
         Returns:
             List of ScannedModule instances.
@@ -436,7 +439,7 @@ class DjangoApcore:
         from django_apcore.scanners import get_scanner
 
         scanner = get_scanner(source)
-        return scanner.scan(include=include, exclude=exclude)
+        return scanner.scan(include=include, exclude=exclude, for_proxy=for_proxy)
 
     # ------------------------------------------------------------------
     # MCP serving
@@ -523,6 +526,7 @@ class DjangoApcore:
         max_content_width: int | None = None,
         docs_url: str | None = None,
         verbose_help: bool = False,
+        validate_proxy: bool = True,
     ) -> Any:
         """Create an apcore-cli Click group with all Django API routes as commands.
 
@@ -552,6 +556,11 @@ class DjangoApcore:
                 default when command names are long and truncate descriptions.
             docs_url: Base URL for online docs, embedded in ``--help`` and man pages.
             verbose_help: When ``True``, show built-in apcore options in ``--help``.
+            validate_proxy: When ``True`` (default), resolve inherited OpenAPI
+                parameters through apcore-toolkit's effective-parameter scanner
+                and refuse to register operations that cannot be forwarded
+                losslessly (for example a query parameter on a JSON-body
+                method). Set ``False`` to keep the legacy best-effort proxy.
 
         Returns:
             A Click Group that can be invoked with ``cli(standalone_mode=True)``.
@@ -592,7 +601,12 @@ class DjangoApcore:
         set_docs_url(docs_url)
 
         # 1. Scan Django routes.
-        modules = self.scan(source=scan_source, include=include, exclude=exclude)
+        modules = self.scan(
+            source=scan_source,
+            include=include,
+            exclude=exclude,
+            for_proxy=validate_proxy,
+        )
         logger.info("Scanned %d API routes", len(modules))
 
         # 1b. Apply display overlay from binding.yaml (§5.13).
@@ -600,6 +614,15 @@ class DjangoApcore:
             from apcore_toolkit.display import DisplayResolver
 
             modules = DisplayResolver().resolve(modules, binding_path=binding_path)
+
+        # 1c. Reject operations the HTTP proxy cannot forward losslessly.
+        if validate_proxy and modules:
+            from apcore_toolkit import validate_effective_proxy_modules
+
+            try:
+                validate_effective_proxy_modules(modules)
+            except ValueError as exc:
+                raise ValueError(f"create_cli() proxy preflight failed: {exc}") from exc
 
         # 2. Register as HTTP proxy modules that forward to the running API.
         registry = Registry()
